@@ -1,0 +1,11 @@
+# Núcleo
+Pillow>=10.0.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+
+# Controle do mouse
+pyautogui>=0.9.54
+pydirectinput>=1.0.4 ; sys_platform == "win32"
+
+# Tecla de parada global (opcional, mas recomendado)
+pynput>=1.7.6
