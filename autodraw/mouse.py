@@ -141,6 +141,9 @@ class DrawingEngine:
         self.settings = settings
         self.backend = backend or MouseBackend(settings.backend)
         self._button_down = False
+        # stop_now() roda na thread da interface enquanto draw() roda na de
+        # trabalho; a trava impede dois mouseUp/mouseDown cruzados.
+        self._button_lock = threading.Lock()
 
     # -- API principal --------------------------------------------------
     def draw(self, paths: Sequence[np.ndarray], stop_event: threading.Event,
@@ -148,6 +151,7 @@ class DrawingEngine:
         total = len(paths)
         start = time.perf_counter()
         s = self.settings
+        done = 0
 
         def emit(stroke: int, finished: bool = False, stopped: bool = False, error: str = "") -> Progress:
             p = Progress(stroke=stroke, total_strokes=total,
@@ -159,6 +163,7 @@ class DrawingEngine:
 
         try:
             for i, path in enumerate(paths):
+                done = i
                 if stop_event.is_set():
                     return emit(i, stopped=True)
                 if len(path) < 2:
@@ -190,8 +195,8 @@ class DrawingEngine:
             self._pen_up()
             name = type(exc).__name__
             if "FailSafe" in name:
-                return emit(0, stopped=True, error="Parada de emergência: cursor no canto da tela.")
-            return emit(0, error=f"{name}: {exc}")
+                return emit(done, stopped=True, error="Parada de emergência: cursor no canto da tela.")
+            return emit(done, error=f"{name}: {exc}")
         finally:
             self._pen_up()
 
@@ -201,16 +206,18 @@ class DrawingEngine:
 
     # -- internos --------------------------------------------------------
     def _pen_down(self) -> None:
-        if not self._button_down:
-            self.backend.mouse_down()
-            self._button_down = True
+        with self._button_lock:
+            if not self._button_down:
+                self.backend.mouse_down()
+                self._button_down = True
 
     def _pen_up(self) -> None:
-        if self._button_down:
-            try:
-                self.backend.mouse_up()
-            finally:
-                self._button_down = False
+        with self._button_lock:
+            if self._button_down:
+                try:
+                    self.backend.mouse_up()
+                finally:
+                    self._button_down = False
 
     def _glide(self, target: np.ndarray, step_px: float, delay: float,
                stop_event: threading.Event, jitter: float = 0.0,
@@ -219,6 +226,8 @@ class DrawingEngine:
 
         `ease` aplica aceleração/desaceleração suave (smoothstep) e `jitter`
         adiciona um desvio sub-pixel para o traço não parecer robótico.
+        Nenhum passo ultrapassa `step_px`: o easing ganha passos extras em vez
+        de alongar os do meio, que o jogo poderia não registrar.
         """
         tx, ty = float(target[0]), float(target[1])
         cx, cy = self.backend.position()
@@ -230,7 +239,7 @@ class DrawingEngine:
                 time.sleep(delay)
             return
 
-        steps = max(1, int(dist / max(1.0, step_px)))
+        steps = _step_count(dist, step_px, ease)
         for k in range(1, steps + 1):
             if stop_event.is_set():
                 return
@@ -248,11 +257,20 @@ class DrawingEngine:
                 time.sleep(delay)
 
 
+def _step_count(dist: float, step_px: float, ease: float) -> int:
+    """Passos necessários para cobrir `dist` sem nenhum passo maior que `step_px`.
+
+    Com easing, a velocidade máxima (no meio do trecho) é `1 + ease / 2` vezes
+    a média — a derivada máxima do smoothstep é 1,5.
+    """
+    return max(1, math.ceil(dist * (1.0 + 0.5 * ease) / max(1.0, step_px)))
+
+
 def estimate_duration(paths: Sequence[np.ndarray], settings: Settings) -> float:
     """Estimativa grosseira do tempo de execução, em segundos."""
     if not paths:
         return 0.0
-    step = max(1.0, settings.step_px)
+    step = max(1.0, settings.step_px) / (1.0 + 0.5 * settings.smoothing_factor)
     travel_step = max(1.0, settings.travel_step_px)
     per_step = settings.step_delay + 0.0012  # custo médio de uma chamada de API
 

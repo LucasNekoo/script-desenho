@@ -1,0 +1,25 @@
+# Ambientes virtuais
+.venv/
+.env/
+venv/
+
+# Bytecode e caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Empacotamento
+build/
+dist/
+*.egg-info/
+*.zip
+
+# Editores e sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -10,9 +10,11 @@ com eles através de uma fila, o que mantém a janela responsiva.
 from __future__ import annotations
 
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -21,14 +23,14 @@ from typing import Any, Dict, Optional, Tuple
 from PIL import ImageTk
 
 from .area_selector import AreaSelector
-from .config import DEFAULT_SETTINGS_PATH, MODE_HELP, MODES, Settings
+from .config import BACKENDS, DEFAULT_SETTINGS_PATH, MODE_HELP, MODES, Settings
 from .countdown import CountdownWindow
 from .hotkeys import EscapeListener
 from .image_processing import ImageError, LoadedImage, load_image
 from .mouse import DrawingEngine, InputBackendError, MouseBackend, Progress, estimate_duration
 from .path_generation import Drawing, FittedDrawing, extract_paths, fit_to_rect
 from .preview import render_paths, thumbnail
-from .screen import Rect, contains, primary_screen
+from .screen import Rect, avoid_corners, contains, primary_screen, session_warning
 
 IMAGE_BOX = (330, 250)
 PREVIEW_BOX = (430, 300)
@@ -38,6 +40,12 @@ MIN_WINDOW_WIDTH = 720
 MIN_WINDOW_HEIGHT = 560
 DEFAULT_WINDOW_WIDTH = 1100
 DEFAULT_WINDOW_HEIGHT = 700
+
+# Fases do fluxo principal. Fora de PHASE_IDLE a imagem, a área e os traços
+# ficam congelados até o desenho terminar ou ser cancelado.
+PHASE_IDLE = "idle"
+PHASE_COUNTDOWN = "countdown"
+PHASE_DRAWING = "drawing"
 
 
 def _fmt_time(seconds: float) -> str:
@@ -104,12 +112,17 @@ class AutoDrawApp(tk.Tk):
         self.area: Optional[Rect] = None
 
         # Threads
-        self._queue: "queue.Queue[Dict[str, Any]]" = queue.Queue()
+        self._phase = PHASE_IDLE
+        self._queue: queue.Queue[Dict[str, Any]] = queue.Queue()
         self._stop_event = threading.Event()
         self._draw_thread: Optional[threading.Thread] = None
         self._engine: Optional[DrawingEngine] = None
+        # Um worker só: ajustes rápidos nos sliders não empilham extrações.
+        self._regen_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="regen")
+        self._regen_future: Optional[Future] = None
         self._regen_token = 0
         self._regen_after: Optional[str] = None
+        self._regen_pending = False  # ajuste feito enquanto ocupado
         self._countdown: Optional[CountdownWindow] = None
         self._hotkey = EscapeListener(self._panic_stop)
 
@@ -129,6 +142,10 @@ class AutoDrawApp(tk.Tk):
         self._update_controls()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(50, self._poll_queue)
+
+        warning = session_warning()
+        if warning:
+            self._log(warning)
 
     # ==================================================================
     # Construção da interface
@@ -190,8 +207,8 @@ class AutoDrawApp(tk.Tk):
         box = ttk.LabelFrame(parent, text="1 · Imagem", padding=10)
         box.pack(fill="x")
 
-        ttk.Button(box, text="Selecionar imagem",
-                   command=self.choose_image).pack(fill="x")
+        self.btn_image = ttk.Button(box, text="Selecionar imagem", command=self.choose_image)
+        self.btn_image.pack(fill="x")
         self.image_label = ttk.Label(box, text="Nenhuma imagem carregada",
                                      wraplength=IMAGE_BOX[0])
         self.image_label.pack(anchor="w", pady=(8, 6))
@@ -253,7 +270,7 @@ class AutoDrawApp(tk.Tk):
         ttk.Label(row2, text="Envio de entrada").pack(side="left")
         self.backend_var = tk.StringVar(value=self.settings.backend)
         backend_combo = ttk.Combobox(row2, textvariable=self.backend_var, state="readonly",
-                                     width=14, values=["auto", "pydirectinput", "pyautogui"])
+                                     width=14, values=list(BACKENDS))
         backend_combo.pack(side="right")
         backend_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_mouse_setting())
         self.backend_help = ttk.Label(
@@ -414,6 +431,8 @@ class AutoDrawApp(tk.Tk):
     # Etapa 1 — imagem
     # ==================================================================
     def choose_image(self) -> None:
+        if self._is_busy():
+            return
         path = filedialog.askopenfilename(
             title="Selecionar imagem",
             filetypes=[("Imagens PNG e JPEG", "*.png *.jpg *.jpeg"),
@@ -462,7 +481,7 @@ class AutoDrawApp(tk.Tk):
     # Etapa 2 — área
     # ==================================================================
     def choose_area(self) -> None:
-        if self._is_drawing():
+        if self._is_busy():
             return
         self._set_status("Arraste sobre a tela para marcar a área de desenho.")
         self.withdraw()
@@ -474,8 +493,12 @@ class AutoDrawApp(tk.Tk):
         if rect is None:
             self._set_status("Seleção de área cancelada.")
             return
-        self.area = rect
-        x, y, w, h = rect
+        safe = avoid_corners(rect, primary_screen(self))
+        if safe != rect:
+            self._log("Área recuada alguns pixels do canto da tela para não acionar a parada "
+                      "de emergência (failsafe).")
+        self.area = safe
+        x, y, w, h = safe
         self.area_label.configure(text=f"{w}×{h} px · canto superior esquerdo em ({x}, {y})")
         self._log(f"Área definida: {w}×{h} em ({x}, {y}).")
         self._refit()
@@ -524,7 +547,10 @@ class AutoDrawApp(tk.Tk):
 
     def _schedule_regeneration(self, delay: int = 300) -> None:
         """Agenda a extração de traços, agrupando ajustes feitos em sequência."""
-        if self.image is None or self._is_drawing():
+        if self.image is None:
+            return
+        if self._is_busy():
+            self._regen_pending = True
             return
         if self._regen_after is not None:
             try:
@@ -542,8 +568,10 @@ class AutoDrawApp(tk.Tk):
         settings = self._current_settings()
         image = self.image
         self._set_status("Convertendo a imagem em traços…")
-        threading.Thread(target=self._regeneration_worker,
-                         args=(token, image, settings), daemon=True).start()
+        if self._regen_future is not None:
+            self._regen_future.cancel()  # só surte efeito se ainda estiver na fila
+        self._regen_future = self._regen_executor.submit(
+            self._regeneration_worker, token, image, settings)
 
     def _regeneration_worker(self, token: int, image: LoadedImage, settings: Settings) -> None:
         try:
@@ -572,18 +600,16 @@ class AutoDrawApp(tk.Tk):
 
     def _render_result_preview(self) -> None:
         self.preview_canvas.delete("all")
-        area_size = (self.area[2], self.area[3]) if self.area else None
+        area = self.area if self.area else (self._default_area() if self.drawing else None)
         message = "Carregue uma imagem para ver a prévia"
         canvas_size = self._canvas_size(self.preview_canvas, PREVIEW_BOX)
-        img = render_paths(self.drawing, area_size, canvas_size, message)
+        img = render_paths(self.fitted, area, canvas_size, message)
         self._preview_photo = ImageTk.PhotoImage(img)
         self.preview_canvas.create_image(0, 0, image=self._preview_photo, anchor="nw")
 
     def _update_stats(self) -> None:
         if self.fitted is None or not self.fitted.paths:
             self.stats_label.configure(text="—")
-            return
-        if not self._check_monitor():
             return
 
         seconds = estimate_duration(self.fitted.paths, self._current_settings())
@@ -596,7 +622,7 @@ class AutoDrawApp(tk.Tk):
     # Etapas 3 a 5 — confirmação, contagem, desenho
     # ==================================================================
     def start_flow(self) -> None:
-        if self._is_drawing():
+        if self._is_busy():
             return
         if self.image is None:
             messagebox.showinfo("Falta a imagem", "Selecione uma imagem PNG ou JPEG primeiro.")
@@ -610,8 +636,7 @@ class AutoDrawApp(tk.Tk):
                                 "ou escolha outro modo.")
             return
 
-        if not self._check_monitor():
-            return
+        self._check_monitor()
 
         seconds = estimate_duration(self.fitted.paths, self._current_settings())
         x, y, w, h = self.fitted.rect
@@ -633,19 +658,19 @@ class AutoDrawApp(tk.Tk):
 
         self._begin_countdown()
 
-    def _check_monitor(self) -> bool:
-        """Avisa quando a área está fora do monitor principal.
+    def _check_monitor(self) -> None:
+        """Oferece trocar para pyautogui quando a área está fora do monitor principal.
 
         O pydirectinput envia coordenadas absolutas normalizadas pelo monitor
         principal, então um desenho em uma tela secundária sai no lugar errado.
-        Nesse caso o pyautogui é a escolha certa.
+        Fora do Windows o pydirectinput nunca é usado, então não há o que avisar.
         """
-        if self.area is None:
-            return True
+        if sys.platform != "win32" or self.area is None:
+            return
         if contains(primary_screen(self), self.area):
-            return True
+            return
         if self.backend_var.get() == "pyautogui":
-            return True
+            return
         trocar = messagebox.askyesno(
             "Área fora do monitor principal",
             "A área selecionada está em outro monitor. O modo pydirectinput "
@@ -655,11 +680,18 @@ class AutoDrawApp(tk.Tk):
             self.backend_var.set("pyautogui")
             self._on_mouse_setting()
             self._log("Envio de entrada alterado para pyautogui (área em monitor secundário).")
-        return True
 
     def _begin_countdown(self) -> None:
-        self.btn_start.configure(state="disabled")
-        self.btn_stop.configure(state="normal")
+        # Congela os traços confirmados: extrações em andamento são descartadas
+        # e refeitas quando o fluxo voltar ao repouso.
+        if self._regen_after is not None or (
+                self._regen_future is not None and not self._regen_future.done()):
+            self._regen_pending = True
+        if self._regen_after is not None:
+            self.after_cancel(self._regen_after)
+            self._regen_after = None
+        self._regen_token += 1
+        self._set_phase(PHASE_COUNTDOWN)
         self._set_status(f"Iniciando em {COUNTDOWN_SECONDS} segundos… posicione a janela do jogo.")
         self._countdown = CountdownWindow(self, COUNTDOWN_SECONDS,
                                           on_finish=self._launch_drawing,
@@ -669,12 +701,12 @@ class AutoDrawApp(tk.Tk):
     def _cancel_countdown(self) -> None:
         self._countdown = None
         self._set_status("Contagem cancelada.")
-        self._update_controls()
+        self._set_phase(PHASE_IDLE)
 
     def _launch_drawing(self) -> None:
         self._countdown = None
         if self.fitted is None or not self.fitted.paths:
-            self._update_controls()
+            self._set_phase(PHASE_IDLE)
             return
 
         self._stop_event.clear()
@@ -688,6 +720,7 @@ class AutoDrawApp(tk.Tk):
         self._draw_thread = threading.Thread(target=self._drawing_worker,
                                              args=(paths, settings), daemon=True)
         self._draw_thread.start()
+        self._set_phase(PHASE_DRAWING)
         self._log(f"Desenho iniciado: {len(paths)} traços.")
 
     def _drawing_worker(self, paths, settings: Settings) -> None:
@@ -732,7 +765,7 @@ class AutoDrawApp(tk.Tk):
         if self._countdown is not None:
             self._countdown.cancel()
             return
-        if not self._is_drawing():
+        if self._phase != PHASE_DRAWING:
             return
         self._stop_event.set()
         engine = self._engine
@@ -740,8 +773,15 @@ class AutoDrawApp(tk.Tk):
             engine.stop_now()
         self._post({"kind": "status", "text": "Parando…"})
 
-    def _is_drawing(self) -> bool:
-        return self._draw_thread is not None and self._draw_thread.is_alive()
+    def _is_busy(self) -> bool:
+        return self._phase != PHASE_IDLE
+
+    def _set_phase(self, phase: str) -> None:
+        self._phase = phase
+        if phase == PHASE_IDLE and self._regen_pending:
+            self._regen_pending = False
+            self._schedule_regeneration(delay=0)
+        self._update_controls()
 
     # ==================================================================
     # Fila de mensagens entre threads
@@ -794,7 +834,7 @@ class AutoDrawApp(tk.Tk):
             self._hotkey.stop()
             self.deiconify()
             self.lift()
-            self._update_controls()
+            self._set_phase(PHASE_IDLE)
 
     def _apply_progress(self, p: Progress) -> None:
         self.progress.configure(value=p.fraction * 100)
@@ -830,20 +870,22 @@ class AutoDrawApp(tk.Tk):
         self.log.configure(state="disabled")
 
     def _update_controls(self) -> None:
-        drawing_now = self._is_drawing()
+        busy = self._is_busy()
         ready = (self.image is not None and self.area is not None
                  and self.fitted is not None and bool(self.fitted.paths))
-        self.btn_start.configure(state="disabled" if drawing_now or not ready else "normal")
-        self.btn_stop.configure(state="normal" if drawing_now else "disabled")
-        self.btn_area.configure(state="disabled" if drawing_now else "normal")
+        self.btn_start.configure(state="disabled" if busy or not ready else "normal")
+        self.btn_stop.configure(state="normal" if busy else "disabled")
+        self.btn_image.configure(state="disabled" if busy else "normal")
+        self.btn_area.configure(state="disabled" if busy else "normal")
         self.btn_clear_area.configure(
-            state="normal" if (self.area is not None and not drawing_now) else "disabled")
+            state="normal" if (self.area is not None and not busy) else "disabled")
 
     def _on_close(self) -> None:
         self._stop_event.set()
         if self._engine is not None:
             self._engine.stop_now()
         self._hotkey.stop()
+        self._regen_executor.shutdown(wait=False, cancel_futures=True)
         try:
             self._current_settings().save(DEFAULT_SETTINGS_PATH)
         except OSError:

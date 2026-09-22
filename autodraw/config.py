@@ -9,7 +9,8 @@ usados pelo processamento de imagem e pelo controle do mouse.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+import math
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Dict
 
@@ -31,6 +32,12 @@ MODE_HELP = {
     MODE_LEVELS: "Separa a imagem em faixas de luminosidade e contorna cada faixa.",
     MODE_HATCH: "Preenche as regiões escuras com hachuras, criando sombreado.",
 }
+
+# Bibliotecas de envio de entrada ("auto" escolhe a melhor disponível).
+BACKENDS = ("auto", "pydirectinput", "pyautogui")
+
+# Campos na escala de usuário (0-100).
+_USER_SCALE_FIELDS = ("detail", "precision", "color_tolerance", "speed", "smoothing", "naturalness")
 
 
 def _lerp(value: float, in_min: float, in_max: float, out_min: float, out_max: float) -> float:
@@ -144,21 +151,53 @@ class Settings:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Settings":
-        valid = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
-        return cls(**{k: v for k, v in data.items() if k in valid})
+    def from_dict(cls, data: Any) -> Settings:
+        """Constrói a partir de dados externos, descartando valores inválidos.
+
+        Cada campo é validado isoladamente: um valor corrompido volta ao
+        padrão sem invalidar o resto das preferências.
+        """
+        if not isinstance(data, dict):
+            return cls()
+        defaults = cls()
+        clean: Dict[str, Any] = {}
+
+        for name in _USER_SCALE_FIELDS:
+            value = data.get(name)
+            if _is_number(value):
+                clean[name] = int(round(max(0.0, min(100.0, float(value)))))
+
+        if data.get("mode") in MODES:
+            clean["mode"] = data["mode"]
+        if data.get("backend") in BACKENDS:
+            clean["backend"] = data["backend"]
+        if isinstance(data.get("invert"), bool):
+            clean["invert"] = data["invert"]
+
+        value = data.get("min_segment_px")
+        if _is_number(value) and value >= 0:
+            clean["min_segment_px"] = int(value)
+        value = data.get("max_paths")
+        if _is_number(value) and value >= 1:
+            clean["max_paths"] = int(value)
+
+        return replace(defaults, **clean)
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: Path) -> "Settings":
+    def load(cls, path: Path) -> Settings:
         if not path.exists():
             return cls()
         try:
             return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (OSError, ValueError):  # JSONDecodeError e UnicodeDecodeError são ValueError
             return cls()
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 DEFAULT_SETTINGS_PATH = Path.home() / ".roblox_autodraw.json"

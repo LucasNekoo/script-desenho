@@ -9,7 +9,7 @@ Enquanto estão aqui, as coordenadas vivem no espaço da imagem de trabalho;
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -18,7 +18,6 @@ from .config import MODE_HATCH, MODE_LEVELS, MODE_OUTLINE, Settings
 from .image_processing import LoadedImage, edge_mask, prepare_gray, tone_masks
 
 Path = np.ndarray
-ProgressFn = Callable[[str], None]
 
 
 @dataclass
@@ -37,30 +36,16 @@ class Drawing:
     def stroke_count(self) -> int:
         return len(self.paths)
 
-    def total_length(self) -> float:
-        """Comprimento somado de todos os traços (sem contar deslocamentos)."""
-        total = 0.0
-        for p in self.paths:
-            if len(p) > 1:
-                total += float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
-        return total
-
 
 # ----------------------------------------------------------------------
 # Extração
 # ----------------------------------------------------------------------
 
-def extract_paths(image: LoadedImage, settings: Settings,
-                  progress: Optional[ProgressFn] = None) -> Drawing:
+def extract_paths(image: LoadedImage, settings: Settings) -> Drawing:
     """Gera as trajetórias de acordo com o modo escolhido."""
-    def report(msg: str) -> None:
-        if progress:
-            progress(msg)
-
     gray = prepare_gray(image, settings)
     h, w = gray.shape
 
-    report("Analisando a imagem…")
     if settings.mode == MODE_OUTLINE:
         paths = _outline_paths(gray, settings)
     elif settings.mode == MODE_LEVELS:
@@ -70,11 +55,9 @@ def extract_paths(image: LoadedImage, settings: Settings,
     else:
         paths = _outline_paths(gray, settings)
 
-    report("Simplificando os traços…")
     paths = _simplify(paths, settings)
     paths = _limit(paths, settings.max_paths)
 
-    report("Otimizando a ordem de desenho…")
     paths = order_paths(paths)
 
     return Drawing(paths=paths, width=w, height=h)
@@ -117,15 +100,21 @@ def _hatch_paths(gray: np.ndarray, settings: Settings) -> List[Path]:
     """Contorno das faixas de tom + hachuras cruzadas nas regiões escuras."""
     paths: List[Path] = _outline_paths(gray, settings)
     masks = tone_masks(gray, settings)
-    spacing = settings.hatch_spacing
-    # A faixa mais escura recebe hachura cruzada; as demais, uma direção só.
+    spacing = max(2, settings.hatch_spacing)
+    # As máscaras são cumulativas: um pixel escuro está em todas elas. As faixas
+    # alternam +45°/-45° e, dentro da mesma direção, cada faixa desloca suas
+    # linhas; assim as regiões escuras recebem hachura cruzada e mais densa em
+    # vez de repetir as mesmas linhas.
+    per_angle = max(1, (len(masks) + 1) // 2)
     for i, mask in enumerate(masks):
         angle = 45.0 if i % 2 == 0 else -45.0
-        paths.extend(_hatch_mask(mask, spacing, angle, settings.min_contour_length))
+        offset = ((i // 2) * spacing) // per_angle
+        paths.extend(_hatch_mask(mask, spacing, angle, settings.min_contour_length, offset))
     return paths
 
 
-def _hatch_mask(mask: np.ndarray, spacing: int, angle: float, min_len: float) -> List[Path]:
+def _hatch_mask(mask: np.ndarray, spacing: int, angle: float, min_len: float,
+                offset: int = 0) -> List[Path]:
     """Corta a máscara com linhas paralelas e devolve os segmentos internos."""
     h, w = mask.shape
     diag = int(np.hypot(h, w)) + 2
@@ -137,7 +126,7 @@ def _hatch_mask(mask: np.ndarray, spacing: int, angle: float, min_len: float) ->
 
     segments: List[Path] = []
     spacing = max(2, spacing)
-    for row_index, y in enumerate(range(0, diag, spacing)):
+    for y in range(offset, diag, spacing):
         row = rotated[y]
         idx = np.flatnonzero(row)
         if idx.size == 0:
@@ -145,16 +134,11 @@ def _hatch_mask(mask: np.ndarray, spacing: int, angle: float, min_len: float) ->
         breaks = np.flatnonzero(np.diff(idx) > 1)
         starts = np.concatenate(([0], breaks + 1))
         ends = np.concatenate((breaks, [idx.size - 1]))
-        runs = []
+        # A direção de cada segmento é decidida depois, por order_paths.
         for s, e in zip(starts, ends):
             x0, x1 = float(idx[s]), float(idx[e])
             if x1 - x0 < max(2.0, min_len * 0.25):
                 continue
-            runs.append((x0, x1))
-        # Vai e volta (boustrophedon) para reduzir deslocamento entre linhas.
-        if row_index % 2 == 1:
-            runs = [(b, a) for a, b in reversed(runs)]
-        for x0, x1 in runs:
             p0 = inv @ np.array([x0, y, 1.0])
             p1 = inv @ np.array([x1, y, 1.0])
             segments.append(np.array([p0, p1], dtype=np.float32))
@@ -243,18 +227,6 @@ class FittedDrawing:
     @property
     def stroke_count(self) -> int:
         return len(self.paths)
-
-    def travel_length(self) -> float:
-        """Distância total percorrida, incluindo deslocamentos entre traços."""
-        total = 0.0
-        cursor: Optional[np.ndarray] = None
-        for p in self.paths:
-            if cursor is not None:
-                total += float(np.linalg.norm(p[0] - cursor))
-            if len(p) > 1:
-                total += float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
-            cursor = p[-1]
-        return total
 
 
 def fit_rect(src_w: int, src_h: int, area: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:

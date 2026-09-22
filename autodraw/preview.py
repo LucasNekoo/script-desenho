@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
+import numpy as np
 from PIL import Image, ImageDraw
 
-from .path_generation import Drawing, fit_rect
+from .path_generation import FittedDrawing, fit_rect
+from .screen import Rect
 
 BACKGROUND = (250, 250, 250)
 AREA_LINE = (120, 150, 200)
@@ -30,46 +32,47 @@ def thumbnail(img: Image.Image, box: Tuple[int, int]) -> Image.Image:
     return canvas
 
 
-def render_paths(drawing: Optional[Drawing],
-                 area_size: Optional[Tuple[int, int]],
+def render_paths(fitted: Optional[FittedDrawing],
+                 area: Optional[Rect],
                  box: Tuple[int, int],
                  message: str = "") -> Image.Image:
-    """Desenha os traços como ficarão dentro da área selecionada.
+    """Desenha os traços exatamente como o mouse vai percorrê-los.
 
-    `area_size` é a largura/altura da área da tela escolhida pelo usuário. Se
-    for ``None``, usa a proporção da própria imagem.
+    `fitted` está em pixels de tela e `area` é o retângulo de tela usado no
+    encaixe; ambos são reduzidos juntos para caber em `box`.
     """
     bw, bh = box
     canvas = Image.new("RGB", (bw, bh), BACKGROUND)
     draw = ImageDraw.Draw(canvas)
 
-    if drawing is None or not drawing.paths:
+    if fitted is None or not fitted.paths or area is None or area[2] <= 0 or area[3] <= 0:
         if message:
             draw.text((14, bh // 2 - 6), message, fill=EMPTY_TEXT)
         return canvas
 
-    aw, ah = area_size if area_size else (drawing.width, drawing.height)
-    if aw <= 0 or ah <= 0:
-        aw, ah = drawing.width, drawing.height
+    ax, ay, aw, ah = area
 
     # 1) a área selecionada, encaixada na caixa de prévia
     pad = 10
-    area_box = fit_rect(aw, ah, (pad, pad, bw - 2 * pad, bh - 2 * pad))
-    ax, ay, arw, arh = area_box
-    draw.rectangle([ax, ay, ax + arw - 1, ay + arh - 1], outline=AREA_LINE)
-
-    # 2) a imagem encaixada dentro da área, preservando a proporção
-    fx, fy, fw, fh = fit_rect(drawing.width, drawing.height, area_box)
-    if fw <= 0 or fh <= 0:
+    bx, by, bw_area, bh_area = fit_rect(aw, ah, (pad, pad, bw - 2 * pad, bh - 2 * pad))
+    if bw_area <= 0 or bh_area <= 0:
         return canvas
-    if (fw, fh) != (arw, arh):
-        draw.rectangle([fx, fy, fx + fw - 1, fy + fh - 1], outline=FIT_LINE)
+    draw.rectangle([bx, by, bx + bw_area - 1, by + bh_area - 1], outline=AREA_LINE)
 
-    scale = fw / drawing.width
-    for path in drawing.paths:
+    scale = bw_area / aw
+    origin = np.array([ax, ay], dtype=np.float32)
+    offset = np.array([bx, by], dtype=np.float32)
+
+    # 2) a parte da área realmente ocupada pela imagem
+    fx, fy, fw, fh = fitted.rect
+    if (fw, fh) != (aw, ah):
+        x0, y0 = (np.array([fx, fy]) - origin) * scale + offset
+        draw.rectangle([x0, y0, x0 + fw * scale - 1, y0 + fh * scale - 1], outline=FIT_LINE)
+
+    for path in fitted.paths:
         if len(path) < 2:
             continue
-        pts = [(fx + float(x) * scale, fy + float(y) * scale) for x, y in path]
-        draw.line(pts, fill=STROKE, width=1)
+        pts = ((path - origin) * scale + offset).tolist()
+        draw.line([tuple(p) for p in pts], fill=STROKE, width=1)
 
     return canvas

@@ -14,8 +14,9 @@ momento.
 Requer Python 3.9 ou superior.
 
 ```bash
-# 1. clonar/extrair o projeto e entrar na pasta
-cd roblox_autodraw
+# 1. clonar o projeto e entrar na pasta
+git clone https://github.com/LucasNekoo/script-desenho.git
+cd script-desenho
 
 # 2. (recomendado) ambiente virtual
 python -m venv .venv
@@ -51,6 +52,10 @@ python main.py
    A janela do programa se minimiza sozinha e o desenho começa.
 6. **Parar** — botão *Parar*, tecla `Esc` (funciona mesmo com o jogo em foco)
    ou leve o cursor ao canto superior esquerdo da tela.
+
+Enquanto a contagem ou o desenho estão em andamento, a imagem e a área ficam
+travadas. Ajustes feitos nesse intervalo são aplicados quando o desenho
+termina ou é cancelado.
 
 A proporção da imagem é sempre preservada: ela é centralizada dentro da área e
 nenhum ponto ultrapassa os limites marcados.
@@ -104,6 +109,17 @@ estimado no rodapé se atualiza junto.
 Diminua a *Velocidade*: alguns jogos amostram a posição do cursor a cada quadro
 e perdem pontos quando o passo é grande demais.
 
+**O desenho para sozinho logo no começo ("Parada de emergência").**
+O failsafe dispara quando o cursor chega a um canto da tela. Se a área
+selecionada encosta num canto, o programa a recua alguns pixels
+automaticamente e registra isso no log.
+
+**Linux com Wayland.**
+`pyautogui` e `pynput` só enxergam janelas XWayland. Em sessões Wayland o
+cursor pode não se mover dentro do jogo e o `Esc` global pode não funcionar;
+o programa avisa no log ao iniciar. Use uma sessão X11 para resultados
+confiáveis.
+
 **Parada de emergência.**
 `Esc` global depende do `pynput`. Sem ele, restam o botão *Parar* e o failsafe
 (cursor no canto superior esquerdo). O botão do mouse é sempre solto ao parar.
@@ -149,23 +165,47 @@ desenhar.
 * **Novo modo de traçado**: escreva uma função `_meu_modo(gray, settings)` em
   `path_generation.py` que devolva uma lista de arrays `(N, 2)`, registre a
   constante em `config.MODES` e ligue-a no `if` de `extract_paths`. A interface
-  monta o seletor a partir de `MODES` e `MODE_HELP`.
+  monta o seletor a partir de `MODES` e `MODE_HELP`. O teste parametrizado
+  `test_every_mode_produces_paths_inside_the_image` passa a cobri-lo sozinho.
 * **Outro dispositivo de entrada**: implemente a mesma interface de
   `MouseBackend` (`move_to`, `mouse_down`, `mouse_up`, `position`) e passe a
-  instância para `DrawingEngine`.
+  instância para `DrawingEngine`, e registre o nome em `config.BACKENDS`.
+  O `FakeBackend` de `tests/conftest.py` serve de modelo.
 * **Suporte a cores da paleta do jogo**: gere um conjunto de traços por cor em
   `path_generation.py` e insira, entre os grupos, um clique na posição da cor
   correspondente da paleta.
 
 ---
 
-## Testes
+## Desenvolvimento
 
-O núcleo foi validado com imagens sintéticas (formas, texto, gradientes e
-ruído): tempo de extração abaixo de 0,2 s para imagens de 1200×900, proporção
-preservada em áreas de qualquer formato, todos os pontos dentro dos limites
-marcados, botão do mouse sempre liberado ao parar e interface responsiva
-durante a execução.
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+
+pytest                             # testes
+ruff check .                       # lint (ruff check . --fix corrige o automático)
+```
+
+O pacote também instala o comando `autodraw`, equivalente a `python main.py`.
+
+### Testes
+
+A suíte em `tests/` cobre o núcleo sem abrir janelas nem mexer no mouse real
+(o motor de desenho roda contra um backend falso que registra as chamadas):
+
+| Arquivo | O que garante |
+| --- | --- |
+| `test_config.py` | persistência e validação das preferências salvas; faixas dos valores derivados |
+| `test_image_processing.py` | formatos aceitos, transparência, arquivos corrompidos ou disfarçados |
+| `test_path_generation.py` | encaixe com proporção preservada, nenhum ponto fora da área, ordenação, hachura sem linhas repetidas |
+| `test_mouse.py` | botão sempre solto, parada imediata, failsafe, nenhum passo maior que o configurado |
+| `test_screen.py` | detecção de monitor, recuo dos cantos, aviso de Wayland |
+| `test_preview.py` | a prévia mostra exatamente os traços que serão desenhados |
+
+A CI (`.github/workflows/ci.yml`) roda lint e testes no Linux e no Windows,
+com Python 3.9 e 3.13.
 
 ## Observação
 

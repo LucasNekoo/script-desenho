@@ -8,8 +8,9 @@ cursor vai parar em coordenadas erradas.
 
 from __future__ import annotations
 
+import os
 import sys
-from typing import Tuple
+from typing import Optional, Tuple
 
 Rect = Tuple[int, int, int, int]  # (x, y, largura, altura)
 
@@ -81,12 +82,38 @@ def contains(outer: Rect, inner: Rect) -> bool:
             and ix + iw <= ox + ow and iy + ih <= oy + oh)
 
 
-def clamp_rect(rect: Rect, bounds: Rect) -> Rect:
-    """Garante que `rect` não escape de `bounds`."""
+def avoid_corners(rect: Rect, screen: Rect, margin: int = 2) -> Rect:
+    """Recua `rect` para longe dos cantos de `screen`.
+
+    pyautogui e pydirectinput abortam (failsafe) quando o cursor para num
+    canto do monitor principal. Uma área que inclua um canto faria o próprio
+    desenho disparar a parada de emergência.
+    """
     x, y, w, h = rect
-    bx, by, bw, bh = bounds
-    x = max(bx, min(x, bx + bw - 1))
-    y = max(by, min(y, by + bh - 1))
-    w = max(1, min(w, bx + bw - x))
-    h = max(1, min(h, by + bh - y))
-    return x, y, w, h
+    sx, sy, sw, sh = screen
+    left, top, right, bottom = x, y, x + w, y + h  # right/bottom exclusivos
+    x_min, y_min = sx, sy
+    x_max, y_max = sx + sw - 1, sy + sh - 1
+
+    for cx, cy in ((x_min, y_min), (x_max, y_min), (x_min, y_max), (x_max, y_max)):
+        if not (left <= cx < right and top <= cy < bottom):
+            continue
+        if cx == x_min:
+            left = max(left, cx + margin)
+        else:
+            right = min(right, cx - margin + 1)
+        if cy == y_min:
+            top = max(top, cy + margin)
+        else:
+            bottom = min(bottom, cy - margin + 1)
+
+    return left, top, max(0, right - left), max(0, bottom - top)
+
+
+def session_warning() -> Optional[str]:
+    """Aviso quando a sessão gráfica impede o controle do mouse."""
+    if sys.platform.startswith("linux") and os.environ.get("XDG_SESSION_TYPE") == "wayland":
+        return ("Sessão Wayland detectada: pyautogui e pynput só enxergam janelas XWayland. "
+                "O cursor pode não se mover no jogo e o Esc global pode não funcionar. "
+                "Para resultados confiáveis, entre numa sessão X11.")
+    return None

@@ -29,7 +29,6 @@ class LoadedImage:
     path: Path
     pil: Image.Image          # RGB, resolução original
     gray: np.ndarray          # escala de cinza, reduzida para processamento
-    work_size: Tuple[int, int]  # (largura, altura) da versão de trabalho
 
     @property
     def original_size(self) -> Tuple[int, int]:
@@ -57,10 +56,10 @@ def load_image(path: str | Path) -> LoadedImage:
     try:
         with Image.open(p) as probe:
             probe.verify()  # detecta arquivos corrompidos sem carregar tudo
-        pil = Image.open(p)
-        if pil.format not in ("PNG", "JPEG"):
-            raise ImageError(f"O conteúdo do arquivo é {pil.format}, e não PNG ou JPEG.")
-        pil = _flatten(pil)
+        with Image.open(p) as src:
+            if src.format not in ("PNG", "JPEG"):
+                raise ImageError(f"O conteúdo do arquivo é {src.format}, e não PNG ou JPEG.")
+            pil = _flatten(src)  # convert() gera uma cópia independente do arquivo
     except UnidentifiedImageError as exc:
         raise ImageError("Não foi possível ler a imagem: arquivo inválido ou corrompido.") from exc
     except OSError as exc:
@@ -69,9 +68,7 @@ def load_image(path: str | Path) -> LoadedImage:
     if min(pil.size) < 8:
         raise ImageError("A imagem é pequena demais para ser desenhada (mínimo 8x8 px).")
 
-    gray = _to_work_gray(pil)
-    h, w = gray.shape
-    return LoadedImage(path=p, pil=pil, gray=gray, work_size=(w, h))
+    return LoadedImage(path=p, pil=pil, gray=_to_work_gray(pil))
 
 
 def _flatten(img: Image.Image) -> Image.Image:

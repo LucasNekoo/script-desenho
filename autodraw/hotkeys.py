@@ -8,7 +8,7 @@ funcionando — a parada fica disponível pelo botão da interface e pelo failsa
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 
 class EscapeListener:
@@ -17,14 +17,6 @@ class EscapeListener:
     def __init__(self, on_escape: Callable[[], None]) -> None:
         self.on_escape = on_escape
         self._listener = None
-
-    @property
-    def available(self) -> bool:
-        try:
-            import pynput  # noqa: F401
-        except Exception:
-            return False
-        return True
 
     def start(self) -> bool:
         if self._listener is not None:
