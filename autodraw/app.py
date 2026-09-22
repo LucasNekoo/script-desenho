@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Tuple
 from PIL import ImageTk
 
 from .area_selector import AreaSelector
-from .config import BACKENDS, DEFAULT_SETTINGS_PATH, MODE_HELP, MODES, Settings
+from .config import BACKENDS, DEFAULT_SETTINGS_PATH, MODE_HELP, MODE_MIXED, MODES, Settings
 from .countdown import CountdownWindow
 from .hotkeys import EscapeListener
 from .image_processing import ImageError, LoadedImage, load_image
@@ -253,8 +253,19 @@ class AutoDrawApp(tk.Tk):
                                           self._on_image_setting)
 
         self.var_invert = tk.BooleanVar(value=self.settings.invert)
-        ttk.Checkbutton(box, text="Inverter claro e escuro", variable=self.var_invert,
+        self.chk_invert = ttk.Checkbutton(box, text="Inverter claro e escuro", variable=self.var_invert,
+                                          command=self._on_image_setting)
+        self.chk_invert.pack(anchor="w", pady=(2, 8))
+
+        # Controles exclusivos do modo misto (aparecem só nele).
+        self.mixed_box = ttk.Frame(box)
+        self.var_shading = self._slider(self.mixed_box, "Intensidade das sombras", self.settings.shading,
+                                        self._on_image_setting)
+        self.var_crosshatch = tk.BooleanVar(value=self.settings.crosshatch)
+        ttk.Checkbutton(self.mixed_box, text="Hachura cruzada nas sombras fortes",
+                        variable=self.var_crosshatch,
                         command=self._on_image_setting).pack(anchor="w", pady=(2, 8))
+        self._update_mode_widgets()
 
         ttk.Separator(box).pack(fill="x", pady=6)
 
@@ -521,6 +532,8 @@ class AutoDrawApp(tk.Tk):
             precision=self.var_precision.get(),
             color_tolerance=self.var_tolerance.get(),
             invert=bool(self.var_invert.get()),
+            shading=self.var_shading.get(),
+            crosshatch=bool(self.var_crosshatch.get()),
             speed=self.var_speed.get(),
             smoothing=self.var_smoothing.get(),
             naturalness=self.var_natural.get(),
@@ -531,7 +544,14 @@ class AutoDrawApp(tk.Tk):
         if not self._ui_ready:
             return
         self.mode_help.configure(text=MODE_HELP.get(self.mode_var.get(), ""))
+        self._update_mode_widgets()
         self._on_image_setting()
+
+    def _update_mode_widgets(self) -> None:
+        if self.mode_var.get() == MODE_MIXED:
+            self.mixed_box.pack(fill="x", after=self.chk_invert)
+        else:
+            self.mixed_box.pack_forget()
 
     def _on_image_setting(self) -> None:
         if not self._ui_ready:

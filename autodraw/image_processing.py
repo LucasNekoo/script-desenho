@@ -29,6 +29,7 @@ class LoadedImage:
     path: Path
     pil: Image.Image          # RGB, resolução original
     gray: np.ndarray          # escala de cinza, reduzida para processamento
+    rgb: np.ndarray           # RGB na mesma resolução reduzida (usado pelo modo misto)
 
     @property
     def original_size(self) -> Tuple[int, int]:
@@ -68,7 +69,8 @@ def load_image(path: str | Path) -> LoadedImage:
     if min(pil.size) < 8:
         raise ImageError("A imagem é pequena demais para ser desenhada (mínimo 8x8 px).")
 
-    return LoadedImage(path=p, pil=pil, gray=_to_work_gray(pil))
+    rgb, gray = _to_work(pil)
+    return LoadedImage(path=p, pil=pil, gray=gray, rgb=rgb)
 
 
 def _flatten(img: Image.Image) -> Image.Image:
@@ -81,14 +83,15 @@ def _flatten(img: Image.Image) -> Image.Image:
     return img.convert("RGB")
 
 
-def _to_work_gray(img: Image.Image) -> np.ndarray:
-    """Reduz a imagem para a resolução de trabalho e converte para cinza."""
+def _to_work(img: Image.Image) -> Tuple[np.ndarray, np.ndarray]:
+    """Reduz a imagem para a resolução de trabalho; devolve (RGB, cinza)."""
     w, h = img.size
     scale = min(1.0, PROCESSING_MAX_SIDE / max(w, h))
     if scale < 1.0:
         img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
-    arr = np.asarray(img.convert("L"), dtype=np.uint8)
-    return arr
+    rgb = np.asarray(img, dtype=np.uint8)
+    gray = np.asarray(img.convert("L"), dtype=np.uint8)
+    return rgb, gray
 
 
 # ----------------------------------------------------------------------

@@ -9,12 +9,12 @@ Enquanto estão aqui, as coordenadas vivem no espaço da imagem de trabalho;
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from .config import MODE_HATCH, MODE_LEVELS, MODE_OUTLINE, Settings
+from .config import MODE_HATCH, MODE_LEVELS, MODE_MIXED, Settings
 from .image_processing import LoadedImage, edge_mask, prepare_gray, tone_masks
 
 Path = np.ndarray
@@ -42,23 +42,31 @@ class Drawing:
 # ----------------------------------------------------------------------
 
 def extract_paths(image: LoadedImage, settings: Settings) -> Drawing:
-    """Gera as trajetórias de acordo com o modo escolhido."""
+    """Gera as trajetórias de acordo com o modo escolhido.
+
+    Um modo pode devolver várias camadas; elas são desenhadas em sequência
+    (cada uma com sua própria otimização de percurso) e, se houver traços
+    demais, as primeiras camadas têm prioridade.
+    """
     gray = prepare_gray(image, settings)
     h, w = gray.shape
 
-    if settings.mode == MODE_OUTLINE:
-        paths = _outline_paths(gray, settings)
+    if settings.mode == MODE_MIXED:
+        from .mixed import mixed_layers  # import tardio: o modo misto reutiliza este módulo
+        layers = mixed_layers(image, settings)
     elif settings.mode == MODE_LEVELS:
-        paths = _level_paths(gray, settings)
+        layers = [_level_paths(gray, settings)]
     elif settings.mode == MODE_HATCH:
-        paths = _hatch_paths(gray, settings)
-    else:
-        paths = _outline_paths(gray, settings)
+        layers = [_hatch_paths(gray, settings)]
+    else:  # contornos
+        layers = [_outline_paths(gray, settings)]
 
-    paths = _simplify(paths, settings)
-    paths = _limit(paths, settings.max_paths)
-
-    paths = order_paths(paths)
+    paths: List[Path] = []
+    budget = settings.max_paths
+    for layer in layers:
+        layer = _limit(_simplify(layer, settings), budget)
+        budget -= len(layer)
+        paths.extend(order_paths(layer, start=paths[-1][-1] if paths else None))
 
     return Drawing(paths=paths, width=w, height=h)
 
@@ -175,11 +183,11 @@ def _limit(paths: List[Path], max_paths: int) -> List[Path]:
 # Otimização da ordem (menor deslocamento com a "caneta" levantada)
 # ----------------------------------------------------------------------
 
-def order_paths(paths: Sequence[Path]) -> List[Path]:
+def order_paths(paths: Sequence[Path], start: Optional[np.ndarray] = None) -> List[Path]:
     """Ordena os traços pelo vizinho mais próximo, invertendo quando compensa.
 
-    Implementação vetorizada: a cada passo compara a posição atual com os dois
-    extremos de todos os traços restantes.
+    Implementação vetorizada: a cada passo compara a posição atual (de início,
+    `start` ou a origem) com os dois extremos de todos os traços restantes.
     """
     n = len(paths)
     if n <= 2:
@@ -190,7 +198,7 @@ def order_paths(paths: Sequence[Path]) -> List[Path]:
     used = np.zeros(n, dtype=bool)
 
     ordered: List[Path] = []
-    current = np.array([0.0, 0.0], dtype=np.float32)
+    current = np.zeros(2, dtype=np.float32) if start is None else np.asarray(start, dtype=np.float32)
     big = np.float32(np.inf)
 
     for _ in range(n):

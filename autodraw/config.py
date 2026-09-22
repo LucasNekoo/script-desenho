@@ -25,19 +25,23 @@ PROCESSING_MAX_SIDE = 900
 MODE_OUTLINE = "contornos"
 MODE_LEVELS = "níveis"
 MODE_HATCH = "hachura"
-MODES = (MODE_OUTLINE, MODE_LEVELS, MODE_HATCH)
+MODE_MIXED = "misto"
+MODES = (MODE_OUTLINE, MODE_LEVELS, MODE_HATCH, MODE_MIXED)
 
 MODE_HELP = {
     MODE_OUTLINE: "Detecta bordas e desenha apenas o contorno. Rápido e limpo.",
     MODE_LEVELS: "Separa a imagem em faixas de luminosidade e contorna cada faixa.",
     MODE_HATCH: "Preenche as regiões escuras com hachuras, criando sombreado.",
+    MODE_MIXED: "Analisa cor e luz: contorna a estrutura e hachura as sombras com densidade "
+                "proporcional. Ideal para ilustrações e anime.",
 }
 
 # Bibliotecas de envio de entrada ("auto" escolhe a melhor disponível).
 BACKENDS = ("auto", "pydirectinput", "pyautogui")
 
 # Campos na escala de usuário (0-100).
-_USER_SCALE_FIELDS = ("detail", "precision", "color_tolerance", "speed", "smoothing", "naturalness")
+_USER_SCALE_FIELDS = ("detail", "precision", "color_tolerance", "shading", "speed", "smoothing",
+                      "naturalness")
 
 
 def _lerp(value: float, in_min: float, in_max: float, out_min: float, out_max: float) -> float:
@@ -60,6 +64,10 @@ class Settings:
     color_tolerance: int = 45   # tolerância de cor / agrupamento de tons
     invert: bool = False        # inverter claro/escuro
     min_segment_px: int = 4     # descarta traços menores que isto (px de tela)
+
+    # ---- modo misto ---------------------------------------------------------
+    shading: int = 50           # intensidade das sombras (0 = só as mais escuras)
+    crosshatch: bool = True     # hachura cruzada nas sombras mais fortes
 
     # ---- mouse ------------------------------------------------------------
     speed: int = 70             # velocidade do cursor
@@ -110,6 +118,38 @@ class Settings:
     def hatch_spacing(self) -> int:
         """Distância entre linhas de hachura, em px da imagem de trabalho."""
         return int(round(_lerp(self.detail, 0, 100, 14, 4)))
+
+    # ---- modo misto ---------------------------------------------------------
+    @property
+    def shadow_threshold(self) -> float:
+        """Sombra mínima (0-1) para uma região receber hachura."""
+        return _lerp(self.shading, 0, 100, 0.60, 0.15)
+
+    @property
+    def relative_shadow_min(self) -> float:
+        """Quanto um pixel precisa ser mais escuro que a parte clara da sua região (0-1)."""
+        return _lerp(self.shading, 0, 100, 0.14, 0.05)
+
+    @property
+    def shadow_levels(self) -> int:
+        """Faixas de densidade de hachura, da sombra leve à intensa."""
+        return int(round(_lerp(self.color_tolerance, 0, 100, 8, 3)))
+
+    @property
+    def color_clusters(self) -> int:
+        """Cores distintas consideradas na segmentação de regiões."""
+        return int(round(_lerp(self.color_tolerance, 0, 100, 16, 6)))
+
+    @property
+    def min_region_area(self) -> float:
+        """Área mínima (px² da imagem de trabalho) para uma região ser hachurada."""
+        return _lerp(self.detail, 0, 100, 600, 40)
+
+    @property
+    def mixed_spacing(self) -> tuple[float, float]:
+        """Espaçamento da hachura (mais densa, mais esparsa) em px da imagem de trabalho."""
+        dense = max(3.0, self.hatch_spacing * 0.7)
+        return dense, dense * 3.0
 
     @property
     def step_px(self) -> float:
@@ -171,8 +211,9 @@ class Settings:
             clean["mode"] = data["mode"]
         if data.get("backend") in BACKENDS:
             clean["backend"] = data["backend"]
-        if isinstance(data.get("invert"), bool):
-            clean["invert"] = data["invert"]
+        for name in ("invert", "crosshatch"):
+            if isinstance(data.get(name), bool):
+                clean[name] = data[name]
 
         value = data.get("min_segment_px")
         if _is_number(value) and value >= 0:

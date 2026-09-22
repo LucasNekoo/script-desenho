@@ -69,6 +69,7 @@ nenhum ponto ultrapassa os limites marcados.
 | `contornos` | Detecta bordas (Canny) e desenha só o contorno. Rápido e limpo. |
 | `níveis` | Separa a imagem em faixas de luminosidade e contorna cada faixa. |
 | `hachura` | Preenche as regiões escuras com linhas cruzadas, criando sombreado. |
+| `misto` | Analisa cor e luz e decide região por região: contorno para a estrutura, hachura para as sombras. Feito para ilustrações e anime (veja abaixo). |
 
 | Controle | Efeito |
 | --- | --- |
@@ -76,12 +77,37 @@ nenhum ponto ultrapassa os limites marcados.
 | Precisão | Fidelidade das curvas. Valores baixos simplificam a geometria e aceleram o desenho. |
 | Tolerância de cores | Quantas faixas de tom a imagem gera nos modos `níveis` e `hachura`. |
 | Inverter claro e escuro | Útil para desenhar em telas de fundo escuro. |
+| Intensidade das sombras | Só no modo `misto`: a partir de quão escuro algo recebe hachura. |
+| Hachura cruzada nas sombras fortes | Só no modo `misto`: segunda direção de linhas nas áreas mais escuras. |
 | Velocidade do mouse | Tamanho do passo e pausa entre passos. |
 | Suavidade | Aceleração e desaceleração nas pontas de cada trecho. |
 | Variação natural | Micro-desvio aleatório para o traço não sair perfeitamente reto. |
 | Envio de entrada | `pydirectinput` (recomendado no Windows) ou `pyautogui`. |
 
 Os ajustes são salvos em `~/.roblox_autodraw.json` ao fechar o programa.
+
+### Modo misto
+
+Os outros modos olham só para a luminosidade. O modo `misto` analisa a imagem
+antes de desenhar e trata estrutura e tom separadamente:
+
+* **Estrutura (desenhada primeiro).** Silhueta e bordas detectadas também nos
+  canais de cor, então duas cores de mesma luminosidade (rosa e vermelho)
+  continuam separadas. Mudanças suaves de iluminação não viram linha.
+* **Tom (desenhado depois).** Hachura com densidade proporcional à sombra, em
+  vários níveis. Vale a sombra absoluta (quão escuro é) ou a relativa (quão
+  mais escuro que o resto da mesma região): assim dobras numa camisa branca e
+  a sombra da franja sobre a pele aparecem, mesmo sendo claras.
+* **Direção.** As linhas seguem a forma de cada região (ao longo de mechas e
+  faixas de sombra). A hachura cruzada fica só nas sombras mais fortes.
+* **Preservação.** Fundo liso e brilhos (olhos, reflexos no cabelo) ficam sem
+  hachura. Variações sutis de cor numa área clara, como o blush, viram traços
+  curtos e leves.
+* **Prioridade.** Se houver traços demais, sai primeiro o que importa menos:
+  a hachura das sombras leves. Silhueta e estrutura vêm sempre antes.
+
+Como a estrutura vem primeiro, interromper o desenho no meio ainda deixa um
+contorno legível.
 
 ---
 
@@ -134,6 +160,9 @@ autodraw/
 ├── config.py              parâmetros e tradução para valores técnicos
 ├── image_processing.py    leitura, validação e pré-processamento
 ├── path_generation.py     extração, simplificação e ordenação dos traços
+├── mixed/                 modo misto
+│   ├── maps.py            análise: luminância, cor, bordas, regiões, sombra, brilho
+│   └── layers.py          camadas de estrutura e de tom (hachura adaptativa)
 ├── mouse.py               backend de entrada e execução do traçado
 ├── area_selector.py       overlay de seleção da área
 ├── preview.py             prévias renderizadas com PIL
@@ -167,6 +196,8 @@ desenhar.
   constante em `config.MODES` e ligue-a no `if` de `extract_paths`. A interface
   monta o seletor a partir de `MODES` e `MODE_HELP`. O teste parametrizado
   `test_every_mode_produces_paths_inside_the_image` passa a cobri-lo sozinho.
+  Um modo pode devolver várias camadas (como o `misto`): cada uma é ordenada
+  separadamente e desenhada na sequência.
 * **Outro dispositivo de entrada**: implemente a mesma interface de
   `MouseBackend` (`move_to`, `mouse_down`, `mouse_up`, `position`) e passe a
   instância para `DrawingEngine`, e registre o nome em `config.BACKENDS`.
@@ -200,6 +231,7 @@ A suíte em `tests/` cobre o núcleo sem abrir janelas nem mexer no mouse real
 | `test_config.py` | persistência e validação das preferências salvas; faixas dos valores derivados |
 | `test_image_processing.py` | formatos aceitos, transparência, arquivos corrompidos ou disfarçados |
 | `test_path_generation.py` | encaixe com proporção preservada, nenhum ponto fora da área, ordenação, hachura sem linhas repetidas |
+| `test_mixed.py` | modo misto: densidade segue a sombra, cruzamento só no escuro, fundo e brilhos limpos, blush, dobras, bordas de cor, direção, prioridade |
 | `test_mouse.py` | botão sempre solto, parada imediata, failsafe, nenhum passo maior que o configurado |
 | `test_screen.py` | detecção de monitor, recuo dos cantos, aviso de Wayland |
 | `test_preview.py` | a prévia mostra exatamente os traços que serão desenhados |
