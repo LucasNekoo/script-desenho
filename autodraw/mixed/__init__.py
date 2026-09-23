@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from typing import List
 
+from ..centerline import AI_LINES_THRESHOLD, line_art_paths, source_lines
 from ..config import Settings
 from ..image_processing import LoadedImage
 from ..path_generation import Path
-from .layers import structure_layer, tone_layer
+from .layers import _length, structure_layer, tone_layer
 from .maps import analyze
 
 
@@ -27,7 +28,14 @@ def mixed_layers(image: LoadedImage, settings: Settings) -> List[List[Path]]:
     e só então a hachura, das sombras mais fortes para as mais leves.
     """
     maps = analyze(image, settings)
-    structure = structure_layer(maps, settings)[: settings.max_paths]
+    ai = source_lines(image, settings)
+    if ai is not None:
+        # Linhas por IA no lugar das bordas Canny; a hachura continua igual.
+        structure = line_art_paths(ai, settings, threshold=AI_LINES_THRESHOLD)
+        structure.sort(key=_length, reverse=True)
+    else:
+        structure = structure_layer(maps, settings)
+    structure = structure[: settings.max_paths]
     remaining = settings.max_paths - len(structure)
 
     tone = tone_layer(maps, settings)

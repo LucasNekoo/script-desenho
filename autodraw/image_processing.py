@@ -7,9 +7,9 @@ e devolve matrizes prontas para a extração de traços.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -30,6 +30,11 @@ class LoadedImage:
     pil: Image.Image          # RGB, resolução original
     gray: np.ndarray          # escala de cinza, reduzida para processamento
     rgb: np.ndarray           # RGB na mesma resolução reduzida (usado pelo modo misto)
+
+    # Linhas por IA: preenchidos sob demanda pela interface (ver ai_lines.py),
+    # uma vez por imagem. `ai_error` guarda a falha para não tentar de novo.
+    ai_lines: Optional[np.ndarray] = field(default=None, repr=False)
+    ai_error: Optional[str] = field(default=None, repr=False)
 
     @property
     def original_size(self) -> Tuple[int, int]:

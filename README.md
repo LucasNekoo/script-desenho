@@ -133,14 +133,39 @@ Medido em área de 600×600 px e velocidade padrão:
 | Line art (linhas de 1 a 5 px, hachuras, pupilas preenchidas) | 17.476 px · 5,8 s | **6.519 px · 3,9 s** |
 | Ilustração com contorno escuro | 10.852 px · 3,7 s | **4.229 px · 1,8 s** |
 
-**Com a extração por IA.** Numa ilustração colorida sem line art, gere as
-linhas com a ferramenta [`autodraw-lineart`](https://github.com/LucasNekoo/script-desenho/tree/autodraw-lineart)
-e abra o PNG resultante neste modo. Numa amostra de anime, isso levou o
-desenho de 12,7 s (contornos na imagem original) para 7,3 s, com linhas
-únicas e sem o ruído das sombras.
-
 **Não use em fotos:** sem linhas de verdade, o limiar pega manchas
 irregulares e o desenho vira ruído.
+
+### Linhas por IA (opcional)
+
+Ilustrações coloridas não têm line art pronta. A ferramenta
+[`autodraw-lineart`](https://github.com/LucasNekoo/script-desenho/tree/autodraw-lineart)
+(rede neural Anime2Sketch, em CPU) extrai essas linhas, e o AutoDraw as usa
+nos modos `linhas` e `misto`:
+
+* **`linhas`:** a imagem de linhas da IA entra no lugar da própria imagem.
+* **`misto`:** os traços da IA substituem as bordas Canny na camada de
+  estrutura; a hachura continua igual.
+
+A ferramenta roda **em outro processo**, com o próprio ambiente Python e o
+PyTorch (~1,2 GB instalado). O AutoDraw não depende dela: sem ela instalada,
+a opção só aparece desabilitada.
+
+1. Instale o `autodraw-lineart` seguindo o README da branch dele (inclui
+   `autodraw-lineart download` para os pesos).
+2. O AutoDraw procura o executável nesta ordem: caminho configurado → PATH →
+   `autodraw-lineart/.venv` dentro da pasta do usuário, de `Documents` ou de
+   `Documentos`. Se não achar, use **Localizar…** ao lado da opção.
+3. Marque **Linhas por IA**. A primeira vez em cada imagem leva ~1–2 s; depois
+   os ajustes não chamam a IA de novo.
+
+| Amostra de anime (fundo claro) | `contornos` | `linhas` + IA |
+| --- | --- | --- |
+| Tempo estimado de desenho | 12,7 s | **7,3 s**, com linhas únicas e sem o ruído das sombras |
+
+Em imagens de **fundo escuro com efeitos de luz**, a IA gera ruído; o
+registro avisa quando detecta fundo escuro. Falhas da ferramenta nunca
+interrompem nada: aparecem no registro e o traçado normal é usado.
 
 ---
 
@@ -194,6 +219,8 @@ autodraw/
 ├── image_processing.py    leitura, validação e pré-processamento
 ├── path_generation.py     extração, simplificação e ordenação dos traços
 ├── centerline.py          modo linhas: esqueleto, grafo e caminhos de Euler
+├── ai_lines.py            linhas por IA: localiza o autodraw-lineart e obtém as linhas
+├── lineart_client.py      cliente do contrato do autodraw-lineart (só biblioteca padrão)
 ├── mixed/                 modo misto
 │   ├── maps.py            análise: luminância, cor, bordas, regiões, sombra, brilho
 │   └── layers.py          camadas de estrutura e de tom (hachura adaptativa)
@@ -266,6 +293,7 @@ A suíte em `tests/` cobre o núcleo sem abrir janelas nem mexer no mouse real
 | `test_image_processing.py` | formatos aceitos, transparência, arquivos corrompidos ou disfarçados |
 | `test_path_generation.py` | encaixe com proporção preservada, nenhum ponto fora da área, ordenação, hachura sem linhas repetidas |
 | `test_mixed.py` | modo misto: densidade segue a sombra, cruzamento só no escuro, fundo e brilhos limpos, blush, dobras, bordas de cor, direção, prioridade |
+| `test_ai_lines.py` | linhas por IA com um autodraw-lineart **falso** (sem PyTorch): localizar a ferramenta, respostas inválidas, tamanho errado, uso nos modos linhas e misto, recuo quando indisponível |
 | `test_centerline.py` | modo linhas: linha grossa em 1 traço, mínimo de traços (cruz 2, "#" 4, "8" 1), sem falhas em cruzamentos, manchas com contorno, limiar, ~3× menos tinta que o contornos |
 | `test_mouse.py` | botão sempre solto, parada imediata, failsafe, nenhum passo maior que o configurado |
 | `test_screen.py` | detecção de monitor, recuo dos cantos, aviso de Wayland |

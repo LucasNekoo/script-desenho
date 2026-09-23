@@ -14,7 +14,7 @@ from typing import List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from .centerline import line_art_paths
+from .centerline import AI_LINES_THRESHOLD, line_art_paths, source_lines
 from .config import MODE_HATCH, MODE_LEVELS, MODE_LINES, MODE_MIXED, Settings
 from .image_processing import LoadedImage, edge_mask, prepare_gray, prepare_lines, tone_masks
 
@@ -56,7 +56,11 @@ def extract_paths(image: LoadedImage, settings: Settings) -> Drawing:
         from .mixed import mixed_layers  # import tardio: o modo misto reutiliza este módulo
         layers = mixed_layers(image, settings)
     elif settings.mode == MODE_LINES:
-        layers = [line_art_paths(prepare_lines(image, settings), settings)]
+        ai = source_lines(image, settings)
+        if ai is not None:  # linhas por IA: a imagem de linhas já vem pronta
+            layers = [line_art_paths(ai, settings, threshold=AI_LINES_THRESHOLD)]
+        else:
+            layers = [line_art_paths(prepare_lines(image, settings), settings)]
     elif settings.mode == MODE_LEVELS:
         layers = [_level_paths(gray, settings)]
     elif settings.mode == MODE_HATCH:

@@ -18,15 +18,17 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import ImageTk
 
+from .ai_lines import fetch_ai_lines, find_command, has_dark_background
 from .area_selector import AreaSelector
-from .config import BACKENDS, DEFAULT_SETTINGS_PATH, MODE_HELP, MODE_MIXED, MODES, Settings
+from .config import BACKENDS, DEFAULT_SETTINGS_PATH, MODE_HELP, MODE_LINES, MODE_MIXED, MODES, Settings
 from .countdown import CountdownWindow
 from .hotkeys import EscapeListener
 from .image_processing import ImageError, LoadedImage, load_image
+from .lineart_client import LineartClient, LineartError
 from .mouse import DrawingEngine, InputBackendError, MouseBackend, Progress, estimate_duration
 from .path_generation import Drawing, FittedDrawing, extract_paths, fit_to_rect
 from .preview import render_paths, thumbnail
@@ -40,6 +42,10 @@ MIN_WINDOW_WIDTH = 720
 MIN_WINDOW_HEIGHT = 560
 DEFAULT_WINDOW_WIDTH = 1100
 DEFAULT_WINDOW_HEIGHT = 700
+
+# Modos em que "Linhas por IA" faz sentido (fonte das linhas estruturais).
+AI_MODES = (MODE_LINES, MODE_MIXED)
+MUTED = "#5a6472"
 
 # Fases do fluxo principal. Fora de PHASE_IDLE a imagem, a área e os traços
 # ficam congelados até o desenho terminar ou ser cancelado.
@@ -126,6 +132,9 @@ class AutoDrawApp(tk.Tk):
         self._countdown: Optional[CountdownWindow] = None
         self._hotkey = EscapeListener(self._panic_stop)
 
+        # Linhas por IA: comando do autodraw-lineart, conferido em segundo plano.
+        self._ai_command: Optional[List[str]] = None
+
         # Referências das imagens exibidas (o Tk não segura sozinho)
         self._image_photo: Optional[ImageTk.PhotoImage] = None
         self._preview_photo: Optional[ImageTk.PhotoImage] = None
@@ -146,6 +155,7 @@ class AutoDrawApp(tk.Tk):
         warning = session_warning()
         if warning:
             self._log(warning)
+        self._check_ai_tool()
 
     # ==================================================================
     # Construção da interface
@@ -244,7 +254,7 @@ class AutoDrawApp(tk.Tk):
         combo.bind("<<ComboboxSelected>>", lambda _e: self._on_mode_change())
 
         self.mode_help = ttk.Label(box, text=MODE_HELP[self.settings.mode],
-                                   wraplength=PREVIEW_BOX[0], foreground="#5a6472")
+                                   wraplength=PREVIEW_BOX[0], foreground=MUTED)
         self.mode_help.pack(anchor="w", pady=(4, 8))
 
         self.var_detail = self._slider(box, "Detalhes", self.settings.detail, self._on_image_setting)
@@ -256,6 +266,19 @@ class AutoDrawApp(tk.Tk):
         self.chk_invert = ttk.Checkbutton(box, text="Inverter claro e escuro", variable=self.var_invert,
                                           command=self._on_image_setting)
         self.chk_invert.pack(anchor="w", pady=(2, 8))
+
+        # Linhas por IA (modos linhas e misto): o autodraw-lineart, se instalado.
+        self.ai_box = ttk.Frame(box)
+        ai_row = ttk.Frame(self.ai_box)
+        ai_row.pack(fill="x")
+        self.var_ai = tk.BooleanVar(value=self.settings.ai_lines)
+        self.chk_ai = ttk.Checkbutton(ai_row, text="Linhas por IA (autodraw-lineart)", variable=self.var_ai,
+                                      command=self._on_image_setting, state="disabled")
+        self.chk_ai.pack(side="left")
+        ttk.Button(ai_row, text="Localizar…", command=self._locate_ai_tool).pack(side="right")
+        self.ai_status = ttk.Label(self.ai_box, text="Procurando o autodraw-lineart…",
+                                   wraplength=PREVIEW_BOX[0], foreground=MUTED)
+        self.ai_status.pack(anchor="w", pady=(2, 8))
 
         # Controles exclusivos do modo misto (aparecem só nele).
         self.mixed_box = ttk.Frame(box)
@@ -288,7 +311,7 @@ class AutoDrawApp(tk.Tk):
             box,
             text="Se o jogo ignorar o cursor, troque para pydirectinput.",
             wraplength=PREVIEW_BOX[0],
-            foreground="#5a6472",
+            foreground=MUTED,
         )
         self.backend_help.pack(anchor="w", pady=(4, 0))
 
@@ -412,6 +435,7 @@ class AutoDrawApp(tk.Tk):
         self.area_label.configure(wraplength=left_width)
         self.mode_help.configure(wraplength=right_width)
         self.backend_help.configure(wraplength=right_width)
+        self.ai_status.configure(wraplength=right_width)
         self.stats_label.configure(wraplength=right_width)
 
     def _canvas_size(self, canvas: tk.Canvas, fallback: Tuple[int, int]) -> Tuple[int, int]:
@@ -534,6 +558,7 @@ class AutoDrawApp(tk.Tk):
             invert=bool(self.var_invert.get()),
             shading=self.var_shading.get(),
             crosshatch=bool(self.var_crosshatch.get()),
+            ai_lines=bool(self.var_ai.get()),
             speed=self.var_speed.get(),
             smoothing=self.var_smoothing.get(),
             naturalness=self.var_natural.get(),
@@ -548,10 +573,15 @@ class AutoDrawApp(tk.Tk):
         self._on_image_setting()
 
     def _update_mode_widgets(self) -> None:
-        if self.mode_var.get() == MODE_MIXED:
-            self.mixed_box.pack(fill="x", after=self.chk_invert)
-        else:
-            self.mixed_box.pack_forget()
+        mode = self.mode_var.get()
+        self.ai_box.pack_forget()
+        self.mixed_box.pack_forget()
+        anchor = self.chk_invert
+        if mode in AI_MODES:
+            self.ai_box.pack(fill="x", after=anchor)
+            anchor = self.ai_box
+        if mode == MODE_MIXED:
+            self.mixed_box.pack(fill="x", after=anchor)
 
     def _on_image_setting(self) -> None:
         if not self._ui_ready:
@@ -595,10 +625,71 @@ class AutoDrawApp(tk.Tk):
 
     def _regeneration_worker(self, token: int, image: LoadedImage, settings: Settings) -> None:
         try:
+            self._ensure_ai_lines(image, settings)
             drawing = extract_paths(image, settings)
             self._post({"kind": "drawing", "token": token, "drawing": drawing})
         except Exception as exc:  # noqa: BLE001 — qualquer falha vira mensagem na UI
             self._post({"kind": "error", "text": f"Falha ao gerar os traços: {exc}"})
+
+    # ==================================================================
+    # Linhas por IA (autodraw-lineart, em processo separado)
+    # ==================================================================
+    def _check_ai_tool(self) -> None:
+        """Procura e testa a ferramenta numa thread (~0,1 s, fora da interface)."""
+        settings = self._current_settings() if self._ui_ready else self.settings
+
+        def work() -> None:
+            command = find_command(settings)
+            if command is None:
+                configured = settings.lineart_command.strip()
+                text = (f"Não encontrado em {configured}." if configured else
+                        "autodraw-lineart não encontrado. Instale-o ou use Localizar…")
+                self._post({"kind": "ai_status", "command": None, "text": text})
+                return
+            try:
+                LineartClient(command).check()
+                text = f"Pronto: {command[0]}"
+            except LineartError as exc:
+                self._post({"kind": "ai_status", "command": None, "text": f"Indisponível: {exc}"})
+                return
+            self._post({"kind": "ai_status", "command": command, "text": text})
+
+        threading.Thread(target=work, daemon=True, name="ai-check").start()
+
+    def _locate_ai_tool(self) -> None:
+        exe = "autodraw-lineart.exe" if sys.platform == "win32" else "autodraw-lineart"
+        path = filedialog.askopenfilename(
+            title="Localizar o autodraw-lineart",
+            filetypes=[("autodraw-lineart", exe), ("Todos os arquivos", "*")])
+        if not path:
+            return
+        self.settings = replace(self._current_settings(), lineart_command=path)
+        self.ai_status.configure(text="Conferindo…")
+        self._check_ai_tool()
+
+    def _ensure_ai_lines(self, image: LoadedImage, settings: Settings) -> None:
+        """Obtém as linhas por IA uma vez por imagem (roda na thread de regeneração).
+
+        Falhas não interrompem nada: ficam registradas na imagem, e os modos
+        voltam ao traçado normal.
+        """
+        command = self._ai_command
+        if (not settings.ai_lines or settings.mode not in AI_MODES or command is None
+                or image.ai_lines is not None or image.ai_error is not None):
+            return
+        self._post({"kind": "status", "text": "Extraindo as linhas com IA (uma vez por imagem)…"})
+        try:
+            image.ai_lines, seconds = fetch_ai_lines(image, LineartClient(command))
+        except LineartError as exc:
+            image.ai_error = str(exc)
+            self._post({"kind": "log", "text": f"Linhas por IA falharam nesta imagem ({exc.kind}): {exc} "
+                                               f"Usando o traçado normal."})
+            return
+        text = f"Linhas por IA prontas em {seconds:.1f} s."
+        if has_dark_background(image):
+            text += (" Fundo escuro: a IA costuma gerar ruído nesse tipo de imagem; "
+                     "compare com a opção desligada.")
+        self._post({"kind": "log", "text": text})
 
     # ==================================================================
     # Prévia do resultado
@@ -838,6 +929,16 @@ class AutoDrawApp(tk.Tk):
 
         elif kind == "status":
             self._set_status(msg["text"])
+
+        elif kind == "log":
+            self._log(msg["text"])
+
+        elif kind == "ai_status":
+            self._ai_command = msg["command"]
+            self.ai_status.configure(text=msg["text"])
+            self.chk_ai.configure(state="normal" if self._ai_command else "disabled")
+            if self._ai_command and self.var_ai.get() and self.mode_var.get() in AI_MODES:
+                self._schedule_regeneration(delay=0)  # aplica a IA que já estava ligada
 
         elif kind == "stop":
             self._request_stop()

@@ -32,7 +32,8 @@ MODES = (MODE_OUTLINE, MODE_LINES, MODE_LEVELS, MODE_HATCH, MODE_MIXED)
 MODE_HELP = {
     MODE_OUTLINE: "Detecta bordas e desenha apenas o contorno. Rápido e limpo.",
     MODE_LINES: "Para desenhos com traço escuro (line art, mangá, nanquim): passa uma vez "
-                "pelo centro de cada linha. Não serve para fotos.",
+                "pelo centro de cada linha. Com \"Linhas por IA\", serve também para "
+                "ilustrações coloridas. Não serve para fotos.",
     MODE_LEVELS: "Separa a imagem em faixas de luminosidade e contorna cada faixa.",
     MODE_HATCH: "Preenche as regiões escuras com hachuras, criando sombreado.",
     MODE_MIXED: "Analisa cor e luz: contorna a estrutura e hachura as sombras com densidade "
@@ -71,6 +72,10 @@ class Settings:
     # ---- modo misto ---------------------------------------------------------
     shading: int = 50           # intensidade das sombras (0 = só as mais escuras)
     crosshatch: bool = True     # hachura cruzada nas sombras mais fortes
+
+    # ---- linhas por IA (modos linhas e misto) --------------------------------
+    ai_lines: bool = False      # usar o autodraw-lineart como fonte das linhas
+    lineart_command: str = ""   # caminho do executável; vazio = procurar sozinho
 
     # ---- mouse ------------------------------------------------------------
     speed: int = 70             # velocidade do cursor
@@ -214,9 +219,13 @@ class Settings:
             clean["mode"] = data["mode"]
         if data.get("backend") in BACKENDS:
             clean["backend"] = data["backend"]
-        for name in ("invert", "crosshatch"):
+        for name in ("invert", "crosshatch", "ai_lines"):
             if isinstance(data.get(name), bool):
                 clean[name] = data[name]
+
+        command = data.get("lineart_command")
+        if isinstance(command, str) and len(command) <= 1024:
+            clean["lineart_command"] = command.strip()
 
         value = data.get("min_segment_px")
         if _is_number(value) and value >= 0:

@@ -36,6 +36,10 @@ BLOB_SEED_FACTOR = 2 ** 0.5
 THRESHOLD_BIAS = 0.35
 THRESHOLD_RANGE = (96, 230)
 
+# Limiar para as linhas da extração por IA, que são cinza-claras: 220
+# preservou olhos e detalhes nos testes; 170 perdia linhas.
+AI_LINES_THRESHOLD = 220
+
 # Manchas menores que isto (px²) são sujeira de compressão.
 MIN_COMPONENT_AREA = 12
 
@@ -69,6 +73,13 @@ def line_art_paths(gray: np.ndarray, settings: Settings, threshold: Optional[int
     paths = merge_touching(trace_skeleton(skeleton), MERGE_TOLERANCE)
     paths += [p for p in _blob_outlines(blobs) if _length(p) >= min_length]
     return paths
+
+
+def source_lines(image, settings: Settings) -> Optional[np.ndarray]:
+    """Imagem de linhas da IA, se a opção estiver ligada e a extração tiver dado certo."""
+    if settings.ai_lines and getattr(image, "ai_lines", None) is not None:
+        return image.ai_lines
+    return None
 
 
 def auto_threshold(gray: np.ndarray) -> int:
