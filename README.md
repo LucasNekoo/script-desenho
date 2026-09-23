@@ -75,8 +75,10 @@ entrada**, fundo claro e linhas escuras. Transparência vira fundo branco.
 | 3 | `weights` | pesos ausentes ou diferentes dos publicados |
 | 4 | `input` | imagem de entrada inválida |
 
-**Do lado do AutoDraw**, a imagem de linhas precisa de limiar antes de virar
-esqueleto. Nos testes, **220** funcionou bem; 170 perdeu os olhos.
+**Do lado do AutoDraw** (já integrado na branch `developer`), a imagem de
+linhas passa por limiar (**220**; 170 perdeu os olhos nos testes) e é traçada
+pela linha central no modo `linhas`, ou vira a estrutura do modo `misto`.
+Detalhes e resultados em [docs/integracao-autodraw.md](docs/integracao-autodraw.md).
 
 ---
 

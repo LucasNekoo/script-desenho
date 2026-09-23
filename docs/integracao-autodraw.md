@@ -1,13 +1,19 @@
 # Integração com o AutoDraw
 
-Como ligar esta ferramenta no AutoDraw. **Estado:** a ferramenta e as peças de
-referência estão prontas e testadas; a integração do lado do AutoDraw ainda
-não foi feita. Este documento é o roteiro.
+**Estado: integrado.** Na branch `developer` do AutoDraw:
+
+| Commit | O que entrou |
+| --- | --- |
+| `dd0589e` | Modo **`linhas`**: traçado pela linha central com caminhos de Euler (`autodraw/centerline.py`) |
+| `39b77eb` | Opção **"Linhas por IA"** nos modos `linhas` e `misto`, que chama esta ferramenta |
+
+Este documento explica o que o AutoDraw ganha, como a integração funciona e
+o que foi medido.
 
 ## O que o AutoDraw ganha
 
-Hoje o modo `contornos` (e a camada de estrutura do modo `misto`) detecta
-bordas com Canny. Isso tem dois problemas, ambos medidos:
+O modo `contornos` detecta bordas com Canny. Isso tem dois problemas, ambos
+medidos:
 
 1. **Cada linha é percorrida várias vezes.** Numa linha de 4 px, o Canny acha
    as duas margens e o traçado contorna cada margem indo e voltando. O mouse
@@ -15,143 +21,123 @@ bordas com Canny. Isso tem dois problemas, ambos medidos:
 2. **Ruído em ilustrações coloridas:** sombras, reflexos e texturas viram
    pedaços de borda soltos.
 
-A ferramenta resolve o segundo (a rede devolve só as linhas de desenho), e o
-pós-processamento por **linha central** resolve o primeiro.
+Esta ferramenta resolve o segundo (a rede devolve só as linhas de desenho). O
+modo `linhas` do AutoDraw resolve o primeiro: percorre cada linha uma vez,
+pelo centro, com o mínimo possível de levantadas de caneta.
 
-![Uma mesma linha grossa: o Canny gera 2 traços e 2.251 px de percurso; a linha central, 1 traço e 545 px](img/linha-central.png)
+![Uma mesma linha grossa: o Canny gera 2 traços e 2.251 px de percurso; a linha central, 1 traço e 535 px](img/linha-central.png)
+
+## Como usar
+
+1. Instale esta ferramenta e baixe os pesos (veja o [README](../README.md#instalação)).
+2. Abra o AutoDraw e escolha o modo **`linhas`** ou **`misto`**.
+3. Marque **Linhas por IA (autodraw-lineart)**. Se a caixa estiver
+   desabilitada, a ferramenta não foi encontrada: use **Localizar…** e
+   aponte o executável (`.venv/bin/autodraw-lineart` no Linux,
+   `.venv\Scripts\autodraw-lineart.exe` no Windows).
+
+O AutoDraw procura sozinho, nesta ordem: o caminho configurado, o PATH e
+`autodraw-lineart/.venv` dentro da pasta do usuário, de `Documents` e de
+`Documentos`.
 
 ## Resultados medidos
 
-Área de 600×600 px na tela, velocidade padrão, ajustes padrão do modo
-`contornos`, limiar 220. "Tinta" é a distância percorrida com o botão
-pressionado; "tempo" é a estimativa do próprio AutoDraw.
+Pelo caminho real da integração (a ferramenta gera as linhas da imagem de
+trabalho do AutoDraw, que as traça com o limiar 220). Área de 600×600 px,
+velocidade e ajustes padrão; tempo é a estimativa do próprio AutoDraw;
+"tinta" é a distância percorrida com o botão pressionado.
 
-| Imagem | Hoje (Canny) | Com autodraw-lineart + linha central | Veredito |
+**Modo `linhas`**, comparado com o `contornos` de hoje:
+
+| Imagem | `contornos` | `linhas` + IA | |
 | --- | --- | --- | --- |
-| Ilustração sintética (700×900, abaixo) | 34 traços · 10.852 px · **3,7 s** | 33 traços · 4.708 px · **2,4 s** | ✅ 2,3× menos tinta, 35% mais rápido, linhas únicas |
-| `madoka.jpg`¹ (anime, fundo claro) | 154 traços · 29.683 px · **12,7 s** | 125 traços · 11.230 px · **7,7 s** | ✅ 2,6× menos tinta, 39% mais rápido, bem mais limpo |
-| `saber.png`¹ (fundo escuro com efeitos), modelo `default` | 125 traços · 15.788 px · **8,6 s** | 358 traços · 11.243 px · **17,3 s** | ❌ o fundo vira ruído |
-| `saber.png`¹, modelo `improved` | idem | 260 traços · 10.017 px · **13,0 s** | ❌ melhor, mas ainda pior que o Canny |
+| Ilustração sintética (700×900, abaixo) | 34 traços · 10.852 px · **3,7 s** | 29 traços · 4.774 px · **2,3 s** | ✅ 2,3× menos tinta |
+| `madoka.jpg`¹ (anime, fundo claro) | 154 traços · 29.683 px · **12,7 s** | 121 traços · 10.998 px · **7,5 s** | ✅ 2,7× menos tinta, 41% mais rápido |
+| `saber.png`¹ (fundo escuro com efeitos), modelo `default` | 127 traços · 15.678 px · **8,7 s** | 454 traços · 16.681 px · **22,4 s** | ❌ o fundo vira ruído |
+| `saber.png`¹, modelo `improved` | idem | 270 traços · 10.707 px · **13,6 s** | ❌ melhor, mas ainda pior que o Canny |
+
+**Modo `misto`** (as linhas da IA substituem só a estrutura; a hachura é a mesma):
+
+| Imagem | `misto` | `misto` + IA |
+| --- | --- | --- |
+| Ilustração sintética | 394 traços · 24.291 px · **21,5 s** | 376 traços · 18.770 px · **19,6 s** |
+| `madoka.jpg`¹ | 291 traços · 31.164 px · **18,9 s** | 268 traços · 14.213 px · **14,4 s** |
 
 ¹ Amostras de teste que acompanham o projeto Anime2Sketch (`test_samples/`).
 Não estão neste repositório porque são *fan art* de terceiros.
 
-Custo extra por imagem: ~1 s na chamada (uma vez por imagem carregada) e
-14–49 ms no traçado. Mexer nos sliders não chama a ferramenta de novo.
+Na interface, com a ferramenta real: a primeira extração em cada imagem leva
+~1,2 s (a prévia sai em ~2,4 s no total); mexer nos sliders depois **não**
+chama a IA de novo.
 
-![Original, contornos atuais (Canny), saída da ferramenta e traços por linha central](img/comparacao-sintetica.png)
+![Original, contornos atuais (Canny), saída da ferramenta e traços do AutoDraw no modo linhas com IA](img/comparacao-sintetica.png)
 
-Repare nos olhos: o Canny desenha anéis duplos; a linha central, um traço só.
+Repare nos olhos: o Canny desenha anéis duplos; o modo `linhas`, um traço só.
 
-## Passo a passo
+## Como a integração funciona
 
-### 1. Detectar se a ferramenta está disponível
+A ferramenta continua em processo separado; o AutoDraw só a executa. Os
+arquivos do lado do AutoDraw:
 
-Copie a classe `LineartClient` de
-[`examples/cliente_autodraw.py`](../examples/cliente_autodraw.py) para o
-AutoDraw (ela só usa a biblioteca padrão). Na inicialização, **numa thread**,
-chame `available()` (~30 ms). Se der `False`, a opção de IA simplesmente não
-aparece e nada mais muda.
-
-A ferramenta vive no próprio ambiente Python, então normalmente **não está no
-PATH** do AutoDraw. Guarde o caminho do executável nas preferências
-(`~/.roblox_autodraw.json`), por exemplo:
-
-| Sistema | Caminho típico |
+| Arquivo do AutoDraw | Papel |
 | --- | --- |
-| Windows | `C:\...\autodraw-lineart\.venv\Scripts\autodraw-lineart.exe` |
-| Linux | `~/autodraw-lineart/.venv/bin/autodraw-lineart` |
+| `autodraw/lineart_client.py` | Cópia do [cliente de referência](../examples/cliente_autodraw.py), no estilo do AutoDraw (Python 3.9, `Optional`); só biblioteca padrão |
+| `autodraw/ai_lines.py` | Localiza o executável; gera a imagem de linhas da **imagem de trabalho** (PNG temporário → `extract` → lê de volta); detecta fundo escuro |
+| `autodraw/centerline.py` | Limiar (220 para linhas da IA) → separa linhas de manchas → afinamento Zhang-Suen → grafo → caminhos de Euler |
+| `autodraw/image_processing.py` | `LoadedImage.ai_lines` / `ai_error`: o resultado (ou a falha) fica guardado **por imagem** |
+| `autodraw/app.py` | Caixa "Linhas por IA", "Localizar…", conferência da ferramenta em segundo plano, chamada na thread de regeneração |
 
-e passe `LineartClient(command=[caminho])`. Valide esse campo em
-`Settings.from_dict` como os demais.
-
-### 2. Gerar as linhas uma vez por imagem, com cache
-
-* Use a **imagem de trabalho** do AutoDraw (`LoadedImage.rgb`, até 900 px),
-  não a original. Assim a saída já vem nas coordenadas que o resto do AutoDraw
-  usa.
-* Grave num PNG temporário, chame `client.extract(entrada, saida)` e leia a
-  saída como `numpy` (tons de cinza).
-* Guarde em cache por **imagem + modelo** (por exemplo, um dicionário no
-  `AutoDrawApp`, ou um campo opcional em `LoadedImage`). Os sliders não mudam
-  a imagem de linhas, então ajustar Detalhes ou Precisão só refaz o traçado
-  (milissegundos).
-* Chame dentro do worker de regeneração que já existe
-  (`_regen_executor`/`_regeneration_worker` no `app.py`), nunca na thread do Tk:
-  a chamada leva ~1 s.
-
-### 3. Transformar as linhas em traços
-
-Use [`examples/linhas_para_tracos.py`](../examples/linhas_para_tracos.py)
-(precisa de `scikit-image`, download de ~14 MB, para o `skeletonize`, ou de uma
-implementação própria de afinamento):
-
-```python
-strokes = lines_to_strokes(
-    lines,                                   # uint8, fundo claro
-    threshold=220,                           # 170 perdeu os olhos no teste
-    epsilon=settings.epsilon,                # vem de "Precisão"
-    min_length=settings.min_contour_length,  # vem de "Detalhes"
-)
+```mermaid
+sequenceDiagram
+    participant UI as Interface (Tk)
+    participant W as Thread de regeneração
+    participant T as autodraw-lineart
+    UI->>T: ao abrir: check --skip-verify (thread "ai-check")
+    T-->>UI: ok → caixa habilitada
+    UI->>W: ajuste mudou (modo linhas/misto, IA ligada)
+    alt imagem ainda sem linhas
+        W->>T: extract imagem_de_trabalho.png --threads 2
+        T-->>W: PNG de linhas + JSON
+        W->>W: guarda em LoadedImage.ai_lines
+    end
+    W->>W: extract_paths → line_art_paths(linhas, limiar 220)
+    W-->>UI: traços (prévia)
 ```
 
-| Parâmetro | Efeito | Medido |
+Regras de falha: nada interrompe o uso. Se a ferramenta falhar numa imagem, a
+mensagem (já em português) vai para o registro, fica guardada em
+`ai_error` para não tentar de novo, e o modo usa o traçado normal.
+
+### Parâmetros
+
+| Parâmetro | Valor | Por quê |
 | --- | --- | --- |
-| `threshold` | Até que tom de cinza conta como linha | 220 bom; 170 perde as linhas cinza-claras que o modelo gera |
-| `min_area` | Descarta manchas pequenas antes do esqueleto | 12 px² |
-| `epsilon` | Simplificação Douglas-Peucker | Precisão 55 → 1,7 px |
-| `min_length` | Traço mínimo | **Pesa muito no tempo**: com traço mínimo de 8 px (e `epsilon` 1,0), a Madoka ficou com 193 traços e 10,8 s, contra 125 traços e 7,7 s com os valores acima. Cada traço custa duas pausas de caneta |
+| Limiar das linhas da IA | 220 | As linhas do modelo são cinza-claras; 170 perdia os olhos |
+| Threads da ferramenta | 2 | O jogo e o AutoDraw rodam na mesma máquina |
+| Traço mínimo | metade do `min_contour_length` (slider Detalhes) | No `contornos` o mínimo mede o contorno de um risco, que tem o dobro do comprimento |
+| Simplificação | `epsilon` do AutoDraw (slider Precisão) | Mesma do resto do programa |
 
-### 4. Encaixar no `extract_paths`
+### Testes do lado do AutoDraw
 
-O `extract_paths` já aceita modos com várias camadas, desenhadas em sequência.
-A proposta é trocar **só a fonte das linhas estruturais**:
-
-* **Modo `contornos`:** com a opção de IA ligada, a camada única passa a ser
-  `strokes` em vez de `_outline_paths(gray, settings)`.
-* **Modo `misto`:** a camada de estrutura (`structure_layer`) usa `strokes` no
-  lugar das bordas Canny; a camada de tom (hachura) continua igual.
-
-A simplificação, o limite de traços e a ordenação por camada que o
-`extract_paths` já faz continuam valendo.
-
-### 5. Interface
-
-* Uma caixa **"Linhas por IA"** perto do modo de traçado, visível só quando
-  `available()` for `True` e o modo for `contornos` ou `misto`.
-* Mostrar no registro o tempo da chamada e o modelo usado.
-* Mapear os erros para mensagens (o `message` já vem em português):
-
-| `LineartError.kind` | Ação |
-| --- | --- |
-| `missing` | Esconder a opção |
-| `weights` | Esconder a opção e sugerir `autodraw-lineart download` |
-| `input` | Mostrar `message` |
-| `timeout`, `unexpected`, `protocol` | Voltar ao Canny nesta imagem e registrar |
-| `contract` | Avisar que a ferramenta precisa ser atualizada |
-
-### 6. Testes no AutoDraw
-
-Não é preciso instalar o PyTorch na CI do AutoDraw. Crie um **executável falso**
-(um script Python de poucas linhas) que responda como o contrato e grave uma
-imagem de linhas conhecida, e passe-o como `command`. Os testes de
-[`tests/test_examples.py`](../tests/test_examples.py) mostram como testar o
-cliente e o traçado.
+`tests/test_ai_lines.py` usa um **`autodraw-lineart` falso**: um script de
+poucas linhas que segue o contrato e desenha uma linha conhecida. Assim os 15
+testes rodam sem PyTorch: localizar a ferramenta, respostas inválidas, tamanho
+errado, uso nos dois modos e o recuo quando a ferramenta falta.
 
 ## Limitações e como contornar
 
 | Situação | O que acontece | Como contornar |
 | --- | --- | --- |
-| Fundo escuro com efeitos de luz | `default`: padrão quadriculado; `improved`: manchas; os dois viram ruído após o limiar (tabela acima) | Detectar fundo escuro (por exemplo, luminância média da borda da imagem baixa) e **manter o Canny** nesses casos, ou só oferecer a IA com aviso |
-| Imagem muito alongada | A rede processa um quadrado esticado; detalhes finos no eixo comprimido podem perder definição | `--size 1024` dá mais resolução à rede (~0,3 s e ~270 MB de RAM a mais); o ganho de qualidade **não foi avaliado** |
-| Traços muito curtos (cabelo, texturas) | Viram muitos traços e muitas pausas de caneta | Subir `min_length` (slider Detalhes) |
-| Primeira chamada após ligar o PC | Deve levar mais que ~1 s, porque o PyTorch (772 MB) sai do disco (não medido) | Tempo limite folgado; o cliente usa 120 s |
+| Fundo escuro com efeitos de luz | `default`: padrão quadriculado; `improved`: manchas; os dois viram ruído (tabela acima) | O AutoDraw avisa no registro quando detecta fundo escuro; desligue a opção nessas imagens |
+| Imagem muito alongada | A rede processa um quadrado esticado; detalhes finos no eixo comprimido podem perder definição | `--size 1024` dá mais resolução à rede (~0,3 s e ~270 MB de RAM a mais); o ganho de qualidade **não foi avaliado** e o AutoDraw ainda não expõe essa opção |
+| Muitos traços curtos (cabelo, texturas) | Viram muitos traços e muitas pausas de caneta | Subir o slider Detalhes |
+| Primeira chamada após ligar o PC | Deve levar mais que ~1 s, porque o PyTorch (772 MB) sai do disco (não medido) | O cliente espera até 120 s |
 
-## Relação com a "linha central sem IA"
+## Sobre `examples/linhas_para_tracos.py`
 
-O traçado por linha central **não depende da IA**. Numa imagem que já tem line
-art escura (desenho a nanquim, mangá em preto e branco), dá para passar a
-própria imagem em tons de cinza para `lines_to_strokes` e ganhar o mesmo
-"percorrer cada linha uma vez", sem PyTorch. Vale implementar isso primeiro no
-AutoDraw: é leve, beneficia todo mundo, e a IA passa a ser só outra fonte de
-imagem de linhas para o mesmo traçado.
+É a primeira versão do traçado, mantida como referência simples e com testes.
+Ela percorre o esqueleto de forma gulosa. O AutoDraw usa uma versão melhor,
+em `autodraw/centerline.py`: o esqueleto vira um grafo percorrido por
+caminhos de Euler, o que garante o mínimo de levantadas de caneta sem repetir
+trecho (uma cruz em 2 traços, um "#" em 4, um "8" em 1). Para evoluir o
+traçado, parta de lá.

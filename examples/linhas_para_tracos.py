@@ -1,5 +1,10 @@
 """
-Referência do pós-processamento no AutoDraw: imagem de linhas -> traços.
+Primeira versão do pós-processamento: imagem de linhas -> traços.
+
+O AutoDraw usa uma versão melhor, em autodraw/centerline.py (branch
+developer): o esqueleto vira um grafo percorrido por caminhos de Euler, com
+o mínimo de levantadas de caneta e sem repetir trecho. Este arquivo percorre
+o esqueleto de forma gulosa e fica como referência simples, com testes.
 
     limiar -> remove sujeira -> esqueleto de 1 px -> percorre em traços longos
            -> simplifica (Douglas-Peucker) -> descarta traços curtos
@@ -8,8 +13,8 @@ Por que linha central: detectar bordas (Canny) numa linha de 4 px acha as
 duas margens dela, e contornar cada margem ida e volta faz o mouse passar
 pela mesma linha 4 vezes. O esqueleto passa uma vez só.
 
-Validado no experimento (docs/integracao-autodraw.md): limiar 220 preservou
-olhos e detalhes; 170 perdia linhas cinza-claras que o modelo gera.
+Limiar 220: preservou olhos e detalhes nos testes; 170 perdia as linhas
+cinza-claras que o modelo gera.
 
 Requer: pip install opencv-python-headless scikit-image   (ou o extra [examples])
 Uso direto: python linhas_para_tracos.py <linhas.png> [<previa.png>]

@@ -25,9 +25,9 @@ para o AutoDraw, rodando em processo separado. O [README principal](../README.md
 * Pronto e testado: os três comandos (`check`, `extract`, `download`), os dois
   modelos (`default`, `improved`), a conferência dos pesos e os exemplos de
   integração. 35 testes; CI verde em Linux e Windows (Python 3.10 e 3.13).
-* **Ainda não feito:** a integração do lado do AutoDraw. Este repositório
-  entrega a ferramenta, um [cliente de referência](../examples/cliente_autodraw.py)
-  e o [pós-processamento de referência](../examples/linhas_para_tracos.py).
+* **Integrado no AutoDraw** (branch `developer`): opção "Linhas por IA" nos
+  modos `linhas` e `misto`. Veja [Integração](integracao-autodraw.md), com os
+  resultados medidos pelo caminho real.
 * Limitação principal: ilustrações de **fundo escuro com efeitos de luz** geram
   ruído (veja [Integração § Limitações](integracao-autodraw.md#limitações-e-como-contornar)).
 

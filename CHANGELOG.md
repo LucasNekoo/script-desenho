@@ -5,6 +5,16 @@ versões em [SemVer](https://semver.org/lang/pt-BR/). O número do **contrato**
 (campo `contract` do JSON) é independente da versão do pacote; veja
 [docs/contrato.md](docs/contrato.md#versionamento).
 
+## [Não publicado]
+
+### Documentação
+- Integração concluída no AutoDraw (branch `developer`: modo `linhas` e opção
+  "Linhas por IA"). `docs/integracao-autodraw.md` deixa de ser roteiro e passa
+  a descrever o que foi feito, com resultados medidos pelo caminho real,
+  incluindo o modo `misto`.
+- Figuras refeitas com o traçado que o AutoDraw usa de fato (grafo + Euler).
+- `examples/linhas_para_tracos.py` marcado como a primeira versão (gulosa).
+
 ## [0.1.1] - 2026-09-23 · contrato 1
 
 ### Corrigido

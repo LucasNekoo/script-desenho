@@ -99,8 +99,10 @@ mensagem para o usuário).
   extrator de line art sem mexer no AutoDraw.
 * O traçado por linha central também serve para imagens que já têm line art,
   **sem IA**, e por isso pertence ao AutoDraw.
-* O exemplo [`linhas_para_tracos.py`](../examples/linhas_para_tracos.py) é a
-  referência dessa parte, com testes.
+* No AutoDraw isso virou `autodraw/centerline.py` (modo `linhas`), que
+  percorre o esqueleto como grafo, por caminhos de Euler. O exemplo
+  [`linhas_para_tracos.py`](../examples/linhas_para_tracos.py) é a primeira
+  versão, gulosa, mantida como referência simples.
 
 **Descartado.** Devolver polilinhas em JSON: acoplaria a ferramenta às regras
 de traçado do AutoDraw (tamanho mínimo, simplificação), que mudam com os sliders.
