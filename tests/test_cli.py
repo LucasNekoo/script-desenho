@@ -53,9 +53,42 @@ def test_size_must_be_multiple_of_256(run_cli, drawing: Path, tmp_path: Path) ->
     assert code == 2 and payload["error"] == "usage"
 
 
+@pytest.mark.parametrize("argv", [
+    ["extract", "x.png"],                       # falta --out
+    ["extract", "x.png", "--out", "o.png", "--model", "nenhum"],
+    ["comando-que-nao-existe"],
+    [],
+])
+def test_argument_errors_are_json_too(run_cli, argv) -> None:
+    code, payload = run_cli(*argv)
+    assert code == 2 and payload["error"] == "usage" and payload["message"]
+
+
+def test_download_keeps_stdout_clean(run_cli, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """O gdown imprime progresso; só a linha JSON pode chegar ao stdout."""
+    import hashlib
+    import sys as _sys
+    import types
+
+    from autodraw_lineart import weights
+
+    data = b"pesos-de-teste"
+    spec = weights.WeightsSpec("default", "netG.pth", hashlib.sha256(data).hexdigest(), len(data), "x", False)
+    monkeypatch.setitem(weights.MODELS, "default", spec)
+
+    def fake_download(id, output, quiet):  # noqa: A002 — mesma assinatura do gdown
+        print("Downloading... 100%")
+        Path(output).write_bytes(data)
+
+    monkeypatch.setitem(_sys.modules, "gdown", types.SimpleNamespace(download=fake_download))
+    code, payload = run_cli("download", "--weights-dir", tmp_path)  # run_cli exige 1 linha no stdout
+    assert code == 0 and payload["ok"] and (tmp_path / "netG.pth").read_bytes() == data
+
+
 def test_check_reports_each_model(run_cli, tmp_path: Path) -> None:
     code, payload = run_cli("check", "--weights-dir", tmp_path)
     assert code == 3 and not payload["ok"]
+    assert payload["error"] == "weights" and "download" in payload["message"]
     assert set(payload["models"]) == {"default", "improved"}
 
 

@@ -29,7 +29,21 @@ SIZE_STEP = 256  # igual a extract.SIZE_STEP; repetido para não importar numpy/
 
 CONTRACT = 1
 
-EXIT_OK, EXIT_UNEXPECTED, EXIT_WEIGHTS, EXIT_INPUT = 0, 1, 3, 4
+EXIT_OK, EXIT_UNEXPECTED, EXIT_USAGE, EXIT_WEIGHTS, EXIT_INPUT = 0, 1, 2, 3, 4
+
+
+class UsageError(Exception):
+    """Argumentos inválidos; vira resposta JSON em vez do texto padrão do argparse."""
+
+
+class _Parser(argparse.ArgumentParser):
+    """ArgumentParser que não imprime nem sai sozinho em erro de argumento.
+
+    `--help` e `--version` continuam em texto: são para pessoas, não para o AutoDraw.
+    """
+
+    def error(self, message: str):
+        raise UsageError(f"{self.prog}: {message}")
 
 
 def default_threads() -> int:
@@ -90,7 +104,10 @@ def _cmd_check(args: argparse.Namespace) -> int:
         except WeightsError as exc:
             models[name] = {"ok": False, "message": str(exc)}
     ok = models[args.model]["ok"]
-    _emit({"ok": ok, "weights_dir": str(args.weights_dir or default_weights_dir()), "models": models})
+    payload = {"ok": ok, "weights_dir": str(args.weights_dir or default_weights_dir()), "models": models}
+    if not ok:  # mesma forma de qualquer outro erro: "error" e "message" no topo
+        payload.update(error="weights", message=models[args.model]["message"])
+    _emit(payload)
     return EXIT_OK if ok else EXIT_WEIGHTS
 
 
@@ -104,10 +121,10 @@ def _cmd_download(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="autodraw-lineart",
-                                     description="Extrai line art de ilustrações (Anime2Sketch, CPU).")
+    parser = _Parser(prog="autodraw-lineart",
+                     description="Extrai line art de ilustrações (Anime2Sketch, CPU).")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    common = argparse.ArgumentParser(add_help=False)
+    common = _Parser(add_help=False)
     common.add_argument("--model", choices=sorted(MODELS), default="default")
     common.add_argument("--weights-dir", type=Path, default=None,
                         help=(f"pasta dos pesos (padrão: ${ENV_WEIGHTS_DIR} ou "
@@ -132,10 +149,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    try:
+        args = build_parser().parse_args(argv)
+    except UsageError as exc:
+        return _fail(EXIT_USAGE, "usage", str(exc))
     size = getattr(args, "size", None)
     if size is not None and (size < SIZE_STEP or size % SIZE_STEP):
-        return _fail(2, "usage", f"--size precisa ser múltiplo de {SIZE_STEP}.")
+        return _fail(EXIT_USAGE, "usage", f"--size precisa ser múltiplo de {SIZE_STEP}.")
     try:
         return args.func(args)
     except Exception as exc:  # noqa: BLE001 — o autodraw precisa sempre de uma resposta JSON

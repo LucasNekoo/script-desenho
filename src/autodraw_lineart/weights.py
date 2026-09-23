@@ -8,6 +8,7 @@ Os pesos são pickles do PyTorch. Por isso:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import sys
@@ -99,7 +100,9 @@ def download(model: str, weights_dir: Path | None = None) -> Path:
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / spec.filename
     partial = target.with_suffix(target.suffix + ".part")
-    gdown.download(id=spec.drive_id, output=str(partial), quiet=False)
+    # O stdout é do contrato (uma linha JSON): o progresso do gdown vai para o stderr.
+    with contextlib.redirect_stdout(sys.stderr):
+        gdown.download(id=spec.drive_id, output=str(partial), quiet=False)
     if sha256_of(partial) != spec.sha256:
         partial.unlink(missing_ok=True)
         raise WeightsError(f"O arquivo baixado para '{model}' não confere com o SHA-256 publicado.")

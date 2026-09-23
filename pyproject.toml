@@ -18,7 +18,9 @@ dependencies = [
 
 [project.optional-dependencies]
 download = ["gdown>=5.0"]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+# Só para examples/linhas_para_tracos.py (o pós-processamento de referência do AutoDraw).
+examples = ["opencv-python-headless>=4.8", "scikit-image>=0.22"]
+dev = ["pytest>=8.0", "ruff>=0.6", "opencv-python-headless>=4.8", "scikit-image>=0.22"]
 
 [project.scripts]
 autodraw-lineart = "autodraw_lineart.cli:main"

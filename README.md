@@ -25,6 +25,20 @@ O modelo é o [Anime2Sketch](https://github.com/Mukosame/Anime2Sketch) (MIT). A
 definição da rede foi copiada para [network.py](src/autodraw_lineart/network.py);
 veja [Segurança](#segurança) para o porquê de não depender do repositório original.
 
+## Documentação
+
+| | |
+| --- | --- |
+| [docs/](docs/README.md) | Índice e ordem de leitura |
+| [Contrato v1](docs/contrato.md) | Especificação completa dos comandos, JSON e códigos de saída |
+| [Integração com o AutoDraw](docs/integracao-autodraw.md) | Roteiro passo a passo e **resultados medidos** |
+| [Arquitetura](docs/arquitetura.md) · [Desempenho](docs/desempenho.md) · [Segurança](docs/seguranca.md) · [Decisões](docs/decisoes.md) · [Desenvolvimento](docs/desenvolvimento.md) | O resto |
+| [examples/cliente_autodraw.py](examples/cliente_autodraw.py) | Cliente de referência, pronto para copiar no AutoDraw |
+| [examples/linhas_para_tracos.py](examples/linhas_para_tracos.py) | Limiar + linha central: imagem de linhas → traços |
+| [CHANGELOG](CHANGELOG.md) | Histórico de versões |
+
+![Original, contornos atuais (Canny), saída da ferramenta e traços por linha central](docs/img/comparacao-sintetica.png)
+
 ---
 
 ## Contrato com o AutoDraw
@@ -46,12 +60,12 @@ Opções comuns: `--model default|improved`, `--weights-dir PASTA`, `--skip-veri
 entrada**, fundo claro e linhas escuras. Transparência vira fundo branco.
 
 ```json
-{"contract": 1, "version": "0.1.0", "ok": true, "output": "linhas.png", "model": "default",
+{"contract": 1, "version": "0.1.1", "ok": true, "output": "linhas.png", "model": "default",
  "size": 512, "threads": 4, "width": 512, "height": 512,
  "seconds": {"load": 0.727, "inference": 0.098}}
 ```
 
-**Erros:** `{"contract": 1, "version": "0.1.0", "ok": false, "error": TIPO, "message": "..."}`
+**Erros:** `{"contract": 1, "version": "0.1.1", "ok": false, "error": TIPO, "message": "..."}`
 
 | Código | `error` | Quando |
 | --- | --- | --- |
