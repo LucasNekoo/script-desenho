@@ -1,0 +1,18 @@
+# Ambientes e caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Pesos dos modelos: nunca versionar (centenas de MB; baixados e conferidos por SHA-256)
+weights/
+*.pth
+*.bin
+*.part
+
+# Saídas de testes manuais
+out/
