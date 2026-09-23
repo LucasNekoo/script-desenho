@@ -363,8 +363,9 @@ def build_story() -> list:
         P(f"Isso só precisa ser feito <b>uma vez</b>. As bibliotecas ficam numa pasta própria "
           f"({c('.venv')}) dentro do projeto, sem mexer no resto do computador."),
         numbered([
-            f"Dentro da pasta do projeto, clique com o botão direito num espaço vazio e escolha "
-            f"{k('Abrir no Terminal')}. O Terminal abre já na pasta certa.",
+            f"Entre na pasta do projeto, clique com o botão direito num espaço vazio <b>dentro dela</b> e "
+            f"escolha {k('Abrir no Terminal')}. A linha do Terminal deve terminar com o nome da pasta, por "
+            f"exemplo {c('script-desenho-developer>')}, e não em {c('Documents>')}.",
             f"Rode os dois comandos abaixo, um de cada vez. O segundo demora de 1 a 3 minutos e termina "
             f"com uma linha começando por {c('Successfully installed')}.",
         ]),
@@ -471,11 +472,14 @@ def build_story() -> list:
         code(f"{REPO}/archive/refs/heads/autodraw-lineart.zip"),
         numbered([
             f"Extraia em {k('Documentos')}, como no Passo 2. A pasta vai se chamar "
-            f"{c('script-desenho-autodraw-lineart')}: <b>renomeie para</b> {c('autodraw-lineart')}. "
+            f"{c('script-desenho-autodraw-lineart')}: <b>renomeie para</b> {c('autodraw-lineart')}, com hífen. "
             f"Com esse nome, o AutoDraw a encontra sozinho. Dentro dela deve haver o arquivo "
             f"{c('pyproject.toml')} e a pasta {c('src')}.",
-            f"Abra o Terminal nessa pasta ({k('Abrir no Terminal')}) e rode os quatro comandos abaixo, um de "
-            f"cada vez. O segundo baixa cerca de 200 MB e o último, os 218 MB da rede neural.",
+            f"Entre na pasta {c('autodraw-lineart')}, clique com o botão direito num espaço vazio "
+            f"<b>dentro dela</b> e escolha {k('Abrir no Terminal')}. A linha do Terminal deve terminar em "
+            f"{c('autodraw-lineart>')}, e não em {c('Documents>')}.",
+            "Rode os quatro comandos abaixo, um de cada vez. O segundo baixa cerca de 200 MB e o último, "
+            "os 218 MB da rede neural.",
         ], start=2),
         code(r"py -m venv .venv",
              r".\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu",
@@ -485,7 +489,7 @@ def build_story() -> list:
         numbered([
             f"Confira com o comando abaixo. A resposta é uma linha de texto que deve conter "
             f"{c('&quot;ok&quot;: true')}.",
-        ], start=4),
+        ], start=5),
         code(r".\.venv\Scripts\autodraw-lineart.exe check"),
         numbered([
             f"Feche e abra o AutoDraw. Escolha o modo {k('linhas')}: a caixa {k('Linhas por IA')} deve "
@@ -493,7 +497,7 @@ def build_story() -> list:
             f"Para usar: carregue {c('teste-3-colorida.png')}, marque {k('Linhas por IA')} e espere a "
             f"prévia. Na primeira vez em cada imagem leva de 1 a 2 segundos, e o registro mostra "
             f"“Linhas por IA prontas em … s”. Depois disso, mexer nos ajustes não chama a IA de novo.",
-        ], start=5),
+        ], start=6),
         callout("warn", "A caixa continua desabilitada?",
                 f"Em muitos computadores a pasta Documentos fica dentro do <b>OneDrive</b>, e aí o AutoDraw "
                 f"não a encontra sozinho. Clique em {k('Localizar…')} ao lado da caixa e escolha o arquivo "
@@ -557,6 +561,9 @@ def build_story() -> list:
         ["Erro ao instalar as bibliotecas, citando “Microsoft Visual C++” ou “wheel”",
          f"A versão do Python pode ser nova demais para alguma biblioteca. Instale o Python 3.13 (Passo 1), "
          f"apague a pasta {c('.venv')} e refaça o Passo 3."],
+        [f"{c('Could not open requirements file')} ou {c('Neither setup.py nor pyproject.toml found')}",
+         f"O Terminal estava fora da pasta certa (a do projeto no Passo 3, a {c('autodraw-lineart')} no "
+         f"Passo 6). Apague o {c('.venv')} criado fora dela e refaça o passo, conferindo a linha do Terminal."],
         [c("No module named tkinter"),
          "O Python foi instalado sem o componente tcl/tk. Reinstale pelo site, sem desmarcar nenhuma opção."],
         ["O cursor se move, mas nada é desenhado",
