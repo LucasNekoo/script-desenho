@@ -110,6 +110,15 @@ def prepare_gray(image: LoadedImage, settings: Settings) -> np.ndarray:
     return gray
 
 
+def prepare_lines(image: LoadedImage, settings: Settings) -> np.ndarray:
+    """Cinza para o modo linhas: contraste normalizado, sem desfoque.
+
+    O desfoque dos outros modos engrossaria as linhas e juntaria as próximas.
+    """
+    gray = cv2.normalize(image.gray, None, 0, 255, cv2.NORM_MINMAX)
+    return 255 - gray if settings.invert else gray
+
+
 def edge_mask(gray: np.ndarray, settings: Settings) -> np.ndarray:
     """Mapa binário de bordas (modo contornos)."""
     edges = cv2.Canny(gray, settings.canny_low, settings.canny_high, L2gradient=True)

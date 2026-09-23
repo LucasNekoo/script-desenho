@@ -23,13 +23,16 @@ PROCESSING_MAX_SIDE = 900
 
 # Modos de traçado disponíveis.
 MODE_OUTLINE = "contornos"
+MODE_LINES = "linhas"
 MODE_LEVELS = "níveis"
 MODE_HATCH = "hachura"
 MODE_MIXED = "misto"
-MODES = (MODE_OUTLINE, MODE_LEVELS, MODE_HATCH, MODE_MIXED)
+MODES = (MODE_OUTLINE, MODE_LINES, MODE_LEVELS, MODE_HATCH, MODE_MIXED)
 
 MODE_HELP = {
     MODE_OUTLINE: "Detecta bordas e desenha apenas o contorno. Rápido e limpo.",
+    MODE_LINES: "Para desenhos com traço escuro (line art, mangá, nanquim): passa uma vez "
+                "pelo centro de cada linha. Não serve para fotos.",
     MODE_LEVELS: "Separa a imagem em faixas de luminosidade e contorna cada faixa.",
     MODE_HATCH: "Preenche as regiões escuras com hachuras, criando sombreado.",
     MODE_MIXED: "Analisa cor e luz: contorna a estrutura e hachura as sombras com densidade "

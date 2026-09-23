@@ -67,6 +67,7 @@ nenhum ponto ultrapassa os limites marcados.
 | Modo de traçado | O que faz |
 | --- | --- |
 | `contornos` | Detecta bordas (Canny) e desenha só o contorno. Rápido e limpo. |
+| `linhas` | Para desenhos que já têm traço escuro (line art, mangá, nanquim): passa **uma vez** pelo centro de cada linha. Não serve para fotos (veja abaixo). |
 | `níveis` | Separa a imagem em faixas de luminosidade e contorna cada faixa. |
 | `hachura` | Preenche as regiões escuras com linhas cruzadas, criando sombreado. |
 | `misto` | Analisa cor e luz e decide região por região: contorno para a estrutura, hachura para as sombras. Feito para ilustrações e anime (veja abaixo). |
@@ -108,6 +109,38 @@ antes de desenhar e trata estrutura e tom separadamente:
 
 Como a estrutura vem primeiro, interromper o desenho no meio ainda deixa um
 contorno legível.
+
+### Modo linhas
+
+No modo `contornos`, uma linha de 4 px tem duas bordas, e o contorno de cada
+borda vai e volta: o mouse passa pela mesma linha **quatro vezes**. O modo
+`linhas` trata o desenho como linhas de verdade:
+
+* **Esqueleto.** Cada linha escura é afinada até 1 px (Zhang-Suen, sem
+  dependência nova) e percorrida pelo centro, uma vez só.
+* **Mínimo de levantadas de caneta.** O esqueleto vira um grafo (pontas e
+  cruzamentos são nós) e é coberto por caminhos de Euler. Uma cruz sai em 2
+  traços, um "#" em 4, um "8" em 1.
+* **Manchas continuam manchas.** Áreas escuras preenchidas (pupilas, cabelo
+  pintado) ganham só o contorno; o esqueleto delas seria um risco no meio.
+* **Limiar automático** (Otsu, puxado para o claro), para pegar também as
+  bordas cinza das linhas.
+
+Medido em área de 600×600 px e velocidade padrão:
+
+| Imagem | `contornos` | `linhas` |
+| --- | --- | --- |
+| Line art (linhas de 1 a 5 px, hachuras, pupilas preenchidas) | 17.476 px · 5,8 s | **6.519 px · 3,9 s** |
+| Ilustração com contorno escuro | 10.852 px · 3,7 s | **4.229 px · 1,8 s** |
+
+**Com a extração por IA.** Numa ilustração colorida sem line art, gere as
+linhas com a ferramenta [`autodraw-lineart`](https://github.com/LucasNekoo/script-desenho/tree/autodraw-lineart)
+e abra o PNG resultante neste modo. Numa amostra de anime, isso levou o
+desenho de 12,7 s (contornos na imagem original) para 7,3 s, com linhas
+únicas e sem o ruído das sombras.
+
+**Não use em fotos:** sem linhas de verdade, o limiar pega manchas
+irregulares e o desenho vira ruído.
 
 ---
 
@@ -160,6 +193,7 @@ autodraw/
 ├── config.py              parâmetros e tradução para valores técnicos
 ├── image_processing.py    leitura, validação e pré-processamento
 ├── path_generation.py     extração, simplificação e ordenação dos traços
+├── centerline.py          modo linhas: esqueleto, grafo e caminhos de Euler
 ├── mixed/                 modo misto
 │   ├── maps.py            análise: luminância, cor, bordas, regiões, sombra, brilho
 │   └── layers.py          camadas de estrutura e de tom (hachura adaptativa)
@@ -232,6 +266,7 @@ A suíte em `tests/` cobre o núcleo sem abrir janelas nem mexer no mouse real
 | `test_image_processing.py` | formatos aceitos, transparência, arquivos corrompidos ou disfarçados |
 | `test_path_generation.py` | encaixe com proporção preservada, nenhum ponto fora da área, ordenação, hachura sem linhas repetidas |
 | `test_mixed.py` | modo misto: densidade segue a sombra, cruzamento só no escuro, fundo e brilhos limpos, blush, dobras, bordas de cor, direção, prioridade |
+| `test_centerline.py` | modo linhas: linha grossa em 1 traço, mínimo de traços (cruz 2, "#" 4, "8" 1), sem falhas em cruzamentos, manchas com contorno, limiar, ~3× menos tinta que o contornos |
 | `test_mouse.py` | botão sempre solto, parada imediata, failsafe, nenhum passo maior que o configurado |
 | `test_screen.py` | detecção de monitor, recuo dos cantos, aviso de Wayland |
 | `test_preview.py` | a prévia mostra exatamente os traços que serão desenhados |
