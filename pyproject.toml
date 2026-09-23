@@ -22,6 +22,8 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
 ]
+# Só para regenerar o guia de teste em PDF (docs/guia-teste/gerar_guia.py).
+docs = ["reportlab>=4.0"]
 
 [project.scripts]
 autodraw = "autodraw.app:run"
@@ -50,3 +52,7 @@ ignore = [
     "UP045",
     "SIM105",  # try/except/pass é o idioma adotado no projeto
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Texto corrido das tabelas do guia: quebrar as linhas só atrapalharia a leitura.
+"docs/guia-teste/gerar_guia.py" = ["E501"]

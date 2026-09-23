@@ -23,3 +23,6 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# PDF gerado a partir de docs/guia-teste/gerar_guia.py
+docs/guia-teste/*.pdf

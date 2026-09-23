@@ -275,8 +275,8 @@ class AutoDrawApp(tk.Tk):
         self.chk_ai = ttk.Checkbutton(ai_row, text="Linhas por IA (autodraw-lineart)", variable=self.var_ai,
                                       command=self._on_image_setting, state="disabled")
         self.chk_ai.pack(side="left")
-        ttk.Button(ai_row, text="Localizar…", command=self._locate_ai_tool).pack(side="right")
-        self.ai_status = ttk.Label(self.ai_box, text="Procurando o autodraw-lineart…",
+        ttk.Button(ai_row, text="Localizar...", command=self._locate_ai_tool).pack(side="right")
+        self.ai_status = ttk.Label(self.ai_box, text="Procurando o autodraw-lineart...",
                                    wraplength=PREVIEW_BOX[0], foreground=MUTED)
         self.ai_status.pack(anchor="w", pady=(2, 8))
 
@@ -617,7 +617,7 @@ class AutoDrawApp(tk.Tk):
         token = self._regen_token
         settings = self._current_settings()
         image = self.image
-        self._set_status("Convertendo a imagem em traços…")
+        self._set_status("Convertendo a imagem em traços...")
         if self._regen_future is not None:
             self._regen_future.cancel()  # só surte efeito se ainda estiver na fila
         self._regen_future = self._regen_executor.submit(
@@ -643,7 +643,7 @@ class AutoDrawApp(tk.Tk):
             if command is None:
                 configured = settings.lineart_command.strip()
                 text = (f"Não encontrado em {configured}." if configured else
-                        "autodraw-lineart não encontrado. Instale-o ou use Localizar…")
+                        "autodraw-lineart não encontrado. Instale-o ou use Localizar...")
                 self._post({"kind": "ai_status", "command": None, "text": text})
                 return
             try:
@@ -664,7 +664,7 @@ class AutoDrawApp(tk.Tk):
         if not path:
             return
         self.settings = replace(self._current_settings(), lineart_command=path)
-        self.ai_status.configure(text="Conferindo…")
+        self.ai_status.configure(text="Conferindo...")
         self._check_ai_tool()
 
     def _ensure_ai_lines(self, image: LoadedImage, settings: Settings) -> None:
@@ -677,7 +677,7 @@ class AutoDrawApp(tk.Tk):
         if (not settings.ai_lines or settings.mode not in AI_MODES or command is None
                 or image.ai_lines is not None or image.ai_error is not None):
             return
-        self._post({"kind": "status", "text": "Extraindo as linhas com IA (uma vez por imagem)…"})
+        self._post({"kind": "status", "text": "Extraindo as linhas com IA (uma vez por imagem)..."})
         try:
             image.ai_lines, seconds = fetch_ai_lines(image, LineartClient(command))
         except LineartError as exc:
@@ -803,7 +803,7 @@ class AutoDrawApp(tk.Tk):
             self._regen_after = None
         self._regen_token += 1
         self._set_phase(PHASE_COUNTDOWN)
-        self._set_status(f"Iniciando em {COUNTDOWN_SECONDS} segundos… posicione a janela do jogo.")
+        self._set_status(f"Iniciando em {COUNTDOWN_SECONDS} segundos... posicione a janela do jogo.")
         self._countdown = CountdownWindow(self, COUNTDOWN_SECONDS,
                                           on_finish=self._launch_drawing,
                                           on_cancel=self._cancel_countdown)
@@ -840,7 +840,7 @@ class AutoDrawApp(tk.Tk):
             backend = MouseBackend(settings.backend)
             engine = DrawingEngine(settings, backend)
             self._engine = engine
-            self._post({"kind": "status", "text": f"Desenhando com {backend.name}…"})
+            self._post({"kind": "status", "text": f"Desenhando com {backend.name}..."})
 
             def on_progress(p: Progress) -> None:
                 nonlocal last_emit
@@ -882,7 +882,7 @@ class AutoDrawApp(tk.Tk):
         engine = self._engine
         if engine is not None:
             engine.stop_now()
-        self._post({"kind": "status", "text": "Parando…"})
+        self._post({"kind": "status", "text": "Parando..."})
 
     def _is_busy(self) -> bool:
         return self._phase != PHASE_IDLE
